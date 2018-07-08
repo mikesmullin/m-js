@@ -1,0 +1,23 @@
+{
+  "name": "m",
+  "version": "1.0.0",
+  "description": "A minimalist, modernist, UI component framework for the web.",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@mike.github.com:mikesmullin/m-js.git"
+  },
+  "keywords": [
+    "ui",
+    "component",
+    "framework"
+  ],
+  "author": "Mike Smullin",
+  "license": "MIT",
+  "devDependencies": {
+    "javascript-stringify": "^1.6.0",
+    "xml2js": "^0.4.19"
+  }
+}

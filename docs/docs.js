@@ -9,8 +9,9 @@ Components.Link = {
 				Utils.joinStringIfNotEmpty(v.attrs.class, ' ',  'active') :
 				v.attrs.class,
 			'a.link': {
+				$target: v.attrs.target,
 				$href: v.attrs.href,
-				$onclick: Route.link,
+				$onclick: /^http/.test(v.attrs.href) ? undefined : Route.link,
 				_: v.children,
 			}
 		}};
@@ -29,24 +30,83 @@ Pages.Layout = {
 				'ul.link-list': [
 					{ $: Components.Link, $href: '/guide', _: 'Guide' },
 					{ $: Components.Link, $href: '/api', _: 'API' },
-					{ $: Components.Link, $href: 'https://www.github.com/mikesmullin/m-js', _: 'GitHub' },
+					{ $: Components.Link, $href: 'https://www.github.com/mikesmullin/m-js', $target: '_blank', _: 'GitHub' },
 				],
-				'nav.toc': {
-					ul: [
-						{
-							li: {
-								'a': 'Getting Started',
-								ul: [
-									{ 'li.active': { 'a.link': 'Introduction', ul: [
-										{ li: { 'a.link': 'Tutorial' } },
-										{ li: { 'a.link': 'Learning Resources' } },
-										{ li: { 'a.link': 'Getting Help' } },
-									]}},
-								]
+				'nav.toc': 
+				/^\/guide/.test(Route.uri) ?
+					{
+						ul: [
+							{
+								li: {
+									a: 'Getting Started',
+									ul: [
+										{ 'li.active': { 'a.link': 'Introduction', ul: [
+											{ li: { 'a.link': 'Tutorial' } },
+											{ li: { 'a.link': 'Learning Resources' } },
+											{ li: { 'a.link': 'Getting Help' } },
+										]}},
+									]
+								}
 							}
-						}
-					]
-				},
+						]
+					} :
+					{
+						ul: [
+							{ li: {
+								a: 'm',
+								ul: [
+									{ $: Components.Link, $href: '/api/m/root', _: '.root' },
+									{ $: Components.Link, $href: '/api/m/redraw', _: '.redraw()' },
+									{ $: Components.Link, $href: '/api/m/instance', _: '.instance()' },
+								]
+							}},
+							{ li: {
+								a: 'db',
+								ul: [
+									{ $: Components.Link, $href: '/api/db/state', _: '.state' },
+									{ $: Components.Link, $href: '/api/db/saveState', _: '.saveState()' },
+									{ $: Components.Link, $href: '/api/db/reloadState', _: '.reloadState()' },
+									{ $: Components.Link, $href: '/api/db/defaults', _: '.defaults' },
+									{ $: Components.Link, $href: '/api/db/applyDefaults', _: '.applyDefaults()' },
+									{ $: Components.Link, $href: '/api/db/resetState', _: '.resetState()' },
+									{ $: Components.Link, $href: '/api/db/actions', _: '.actions' },
+									{ $: Components.Link, $href: '/api/db/history', _: '.history' },
+									{ $: Components.Link, $href: '/api/db/saveHistory', _: '.saveHistory()' },
+									{ $: Components.Link, $href: '/api/db/reloadHistory', _: '.reloadHistory()' },
+									{ $: Components.Link, $href: '/api/db/replayHistory', _: '.replayHistory()' },
+									{ $: Components.Link, $href: '/api/db/undoHistory', _: '.undoHistory()' },
+									{ $: Components.Link, $href: '/api/db/resetHistory', _: '.resetHistory()' },
+								]
+							}},
+							{ li: {
+								a: 'Route',
+								ul: [
+									{ $: Components.Link, $href: '/api/route/init', _: '.init()' },
+									{ $: Components.Link, $href: '/api/route/register', _: '.register()' },
+									{ $: Components.Link, $href: '/api/route/redirect', _: '.redirect()' },
+									{ $: Components.Link, $href: '/api/route/rewrite', _: '.rewrite()' },
+									{ $: Components.Link, $href: '/api/route/onnavigate', _: '.onnavigate()' },
+									{ $: Components.Link, $href: '/api/route/link', _: '.link()' },
+									{ $: Components.Link, $href: '/api/route/uri', _: '.uri' },
+									{ $: Components.Link, $href: '/api/route/formatTitle', _: '.formatTitle' },
+									{ $: Components.Link, $href: '/api/route/title', _: '.title' },
+									{ $: Components.Link, $href: '/api/route/titleOf', _: '.titleOf()' },
+								]
+							}},
+							{ li: {
+								a: 'Utils',
+								ul: [
+									{ $: Components.Link, $href: '/api/utils/request', _: '.request()' },
+								]
+							}},
+							{ li: {
+								a: 'Hot',
+								ul: [
+									{ $: Components.Link, $href: '/api/hot/reloader', _: '.reloader()' },
+								]
+							}},
+						]
+					}
 			},
 			'main.right': v.children,
 		};
@@ -170,11 +230,9 @@ Pages.Guide = {
 Pages.Api = {
 	view(v) {
 		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'Introduction' },
+			{ 'h1.title': 'API' },
 
-			{ 'h3.subtitle': [ `“M.js is a minimalist, modernist, UI component framework for the web.”` ]},
-			
-			{ h2: 'What is a web component?' },
+			{ h2: 'Cheatsheet' },
 			
 			{ p: [
 				`An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application. `+

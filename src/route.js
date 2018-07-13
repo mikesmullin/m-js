@@ -51,15 +51,13 @@ const Route = {
 	}),
 
 	rewrite(from, to) {
-		routes[from] = { title: '', vnode: {
-			$: {
-				oninit(v) {
-					Route.redirect(to);
-				},
-				view(v) {
-				}
+		Route.register(from, '', {
+			oninit(v) {
+				Route.redirect(to);
+			},
+			view(v) {
 			}
-		}};
+		});
 	},
 
 	formatTitle: s => s,

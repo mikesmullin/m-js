@@ -2,6 +2,16 @@
   margin: 0;
   padding: 0;
 }
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: 1rem;
+  line-height: 1rem;
+  font-weight: normal;
+}
 body {
   background: #fcfcfe;
   color: #000;
@@ -12,6 +22,7 @@ body {
 }
 .left-sidebar {
   padding: 1rem;
+  min-width: 11rem;
 }
 .left-sidebar header {
   display: flex;

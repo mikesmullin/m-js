@@ -1,4 +1,5 @@
 import uglify from 'rollup-plugin-uglify-es';
+import gzip from 'rollup-plugin-gzip';
 
 export default [
 	{
@@ -16,7 +17,8 @@ export default [
 			sourcemap: true,
 		},
 		plugins: [
-				uglify()
+				uglify(),
+				gzip(),
 		]
-	},	
+	},
 ];

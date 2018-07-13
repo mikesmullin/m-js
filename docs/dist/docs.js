@@ -1,5 +1,5 @@
 import Route from './route.js';
-import Utils from './utils.js';
+import * as Utils from './utils.js';
 
 const Components = {};
 Components.Link = {

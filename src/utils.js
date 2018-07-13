@@ -150,5 +150,3 @@ export const onReady = cb => {
 	document.onreadystatechange = fn;
 	fn(); // kick-start for hot-loading cases
 };
-
-export default Utils;

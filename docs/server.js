@@ -11,6 +11,7 @@ const DIST_DIR = join(__dirname, 'dist');
 const delay = ms => new Promise(ok=>setTimeout(ok, ms));
 
 app.use('/', express.static(join(__dirname, 'dist')));
+app.use('/dist', express.static(join(__dirname, '..', 'src')));
 app.use('/dist', express.static(join(__dirname, 'dist')));
 app.use('/dist', express.static(join(__dirname, '..', 'dist')));
 app.use('/dist', express.static(join(__dirname, '..', 'node_modules', 'socket.io-client', 'dist')));

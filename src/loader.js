@@ -1,4 +1,4 @@
-import Utils from './utils.js';
+import * as Utils from './utils.js';
 
 const Loader = {
 	async loadCss(url, nocache=false, styleCheckEl, styleCheckAttr, styleCheckVal) {
@@ -22,11 +22,12 @@ const Loader = {
 		} else await Utils.delay(250);
 		if (null != existing) try { document.head.removeChild(existing) } catch(e) {}
 	},
+
 	// note: to unload js, stop referencing it, and it will GC
-	loadJs(url, module, nocache=false) {
+	loadJs(url, type='text/javascript', nocache=false) {
 		let ok;
 		const script = document.createElement('script');
-		if (module) script.setAttribute('type', 'module');
+		if (type) script.setAttribute('type', type);
 		script.setAttribute('src', `${url}?${nocache ? Utils.getUid() : ''}`);
 		script.addEventListener('load', () => {
 			try {

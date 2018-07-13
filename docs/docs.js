@@ -1,5 +1,5 @@
-import Route from './route.js';
-import * as Utils from './utils.js';
+import Route from '../src/route.js';
+import * as Utils from '../src/utils.js';
 
 const Components = {};
 Components.Link = {
@@ -53,8 +53,7 @@ Pages.Layout = {
 	}
 };
 
-Pages.Guides = {};
-Pages.Guides.Home = {
+Pages.Guide = {
 	view(v) {
 		return { $: Pages.Layout, _: [
 			{ 'h1.title': 'Introduction' },
@@ -168,14 +167,33 @@ Pages.Guides.Home = {
 	}
 };
 
-let App = {};
-App.init = () => {
-	Route.formatTitle = s => `${s} | M.js Documentation`;
-	Route.rewrite('/', '/guide');
-	Route.register('/guide', 'Guide', Pages.Guides.Home);
-	Route.init();
+Pages.Api = {
+	view(v) {
+		return { $: Pages.Layout, _: [
+			{ 'h1.title': 'Introduction' },
+
+			{ 'h3.subtitle': [ `“M.js is a minimalist, modernist, UI component framework for the web.”` ]},
+			
+			{ h2: 'What is a web component?' },
+			
+			{ p: [
+				`An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application. `+
+				`They are the modular equivalent of bricks which you can use to build your website's look and feel. `+
+				`Examples of web components include buttons, links, forms, menus, loading spinners, etc. `+
+				`More than just HTML, they are stateful, defined primarily in Javascript, and may contain data which persists beyond the usual DOM lifecycle. ` ]},
+		]};
+	}
 };
 
+const App = {
+	init() {
+		Route.formatTitle = s => `${s} | M.js Documentation`;
+		Route.rewrite('/', '/guide');
+		Route.register('/guide', 'Guide', Pages.Guide);
+		Route.register('/api', 'API', Pages.Api);
+		Route.init();
+	}	
+};
 export default App;
-
-Utils.onReady(App.init);
+import Hot from '../src/hot.js';
+Utils.onReady(Hot.reloader(App));

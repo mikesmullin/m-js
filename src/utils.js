@@ -67,7 +67,7 @@ export const prop = function(el, ns, k, v) {
 };
 
 // loader
-export const getUid = () => Math.round(performance.now()*100).toString(16);
+export const uid = () => Math.round(performance.now()*100).toString(16);
 
 // db
 export const rescue = (cb,alt) => { try { return cb(); } catch(e) { rescue.lastError = e; return alt; } };

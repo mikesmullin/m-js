@@ -7,16 +7,12 @@ const stylus = require('stylus');
 const { relative, join } = require('path');
 const fs = require('fs');
 const RX_STYLUS_EXT = /\.styl$/;
-const DIST_DIR = join(__dirname, 'dist');
+const DIST_DIR = __dirname;
 const delay = ms => new Promise(ok=>setTimeout(ok, ms));
 
-app.use('/', express.static(join(__dirname, 'dist')));
-app.use('/dist', express.static(join(__dirname, '..', 'src')));
-app.use('/dist', express.static(join(__dirname, 'dist')));
-app.use('/dist', express.static(join(__dirname, '..', 'dist')));
-app.use('/dist', express.static(join(__dirname, '..', 'node_modules', 'socket.io-client', 'dist')));
+app.use('/', express.static(join(__dirname, '..')));
 
-const watcher = chokidar.watch('dist/**/*.{js,styl}', {
+const watcher = chokidar.watch('docs/**/*.{js,styl}', {
 	cwd: __dirname,
   persistent: true
 });

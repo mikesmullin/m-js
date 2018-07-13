@@ -1,4 +1,4 @@
-import Utils from './utils.js';
+import * as Utils from './utils.js';
 
 /*
 	Pug markup

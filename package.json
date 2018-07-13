@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "A minimalist, modernist, UI component framework for the web.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "docs": "nodemon --watch docs/server.js docs/server.js",
+    "build": "rollup -c"
   },
   "repository": {
     "type": "git",
@@ -17,7 +19,14 @@
   "author": "Mike Smullin",
   "license": "MIT",
   "devDependencies": {
+    "chokidar": "^2.0.4",
+    "express": "^4.16.3",
     "javascript-stringify": "^1.6.0",
+    "nodemon": "^1.18.1",
+    "rollup": "^0.62.0",
+    "rollup-plugin-uglify-es": "0.0.1",
+    "socket.io": "^2.1.1",
+    "stylus": "^0.54.5",
     "xml2js": "^0.4.19"
   }
 }

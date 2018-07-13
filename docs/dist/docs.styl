@@ -1,0 +1,141 @@
+vendor(type,prop)
+	-webkit-{type} prop
+	-moz-{type} prop
+	{type} prop
+
+*
+	margin 0
+	padding 0
+
+body
+	background #fcfcfe
+	color #000
+	display flex
+	margin 0
+	height 100vh
+	font 300 1rem/1em Yantramanav, sans-serif
+
+spacer = 1rem
+color-blue = rgba(44,77,144,1)
+
+.left-sidebar
+	padding spacer
+
+	header
+		display flex
+		align-items baseline
+		margin-bottom spacer
+		font-weight 700
+		color #000
+		.logomark
+			display block
+			width 10px
+			height 10px
+			background transparent
+			border 4px solid #333
+			margin-right spacer*.5
+			vendor('border-radius', 5px)
+			transform rotate(45deg)
+		.logo
+			font-size 1.5rem
+			margin-right spacer*.25
+		// .version
+
+	ul.link-list
+		display flex
+		margin-bottom spacer
+		li.list-item
+			list-style-type none
+			display block
+			margin-right spacer*.5
+			border-left 1px solid #bbb
+			padding-left spacer*.5
+			// padding-top spacer*.25
+			// padding-bottom spacer*.25
+			&:first-child
+				border-left none
+				padding-left 0
+
+	.toc
+		ul
+			li
+				white-space nowrap
+				list-style-type none
+				margin-top spacer*.25
+				&:first-child
+					margin-top 0
+				li
+					margin-left spacer
+					&:first-child
+						margin-top spacer*.25
+					&.active ul
+						border-left 3px solid color-blue
+
+a, .link
+	font-weight 500
+	text-decoration none
+	.active > &
+		font-weight 700
+.link, a[href]
+	color color-blue
+	cursor pointer
+	&:hover
+		text-decoration underline
+
+main.right
+	padding spacer
+	flex-grow 1
+	max-width 640px
+	line-height 1.3em
+
+	strong
+		font-weight 900
+		color #444
+
+	h1
+		color #444
+		font-size 2rem
+		font-weight 700
+		margin-bottom spacer
+		&.title
+			color color-blue
+			margin-bottom spacer*2.5
+	h2
+		color #444
+		font-size 1.5rem
+		font-weight 500
+		margin-bottom spacer
+	h3.subtitle
+		color #333
+		font-size 2rem
+		font-weight 300
+		padding spacer
+		margin-bottom spacer*2
+		line-height 1.3em
+		font-family "Patua One"
+		border-left 1em solid #aaa
+		background #ccc
+	p
+		margin-bottom spacer
+		text-align justify
+
+	code
+		background #eee
+		color #000
+		font-family "Source Code Pro", monospace
+		font-size .8rem
+		vendor('border-radius', 5px)
+		padding .1em .3em
+		a
+			text-decoration none
+
+
+	small, .small
+		font-size .8rem
+
+	footer
+		border-top 1px solid #bbb
+		padding-top spacer
+		
+body
+	--stylesheet-loaded true

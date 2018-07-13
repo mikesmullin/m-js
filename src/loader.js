@@ -4,7 +4,7 @@ const Loader = {
 	async loadCss(url, nocache=false, styleCheckEl, styleCheckAttr, styleCheckVal) {
 		const link = document.createElement('link');
 		link.setAttribute('rel', 'stylesheet');
-		link.setAttribute('href', `${url}?${nocache ? Utils.getUid() : ''}`);
+		link.setAttribute('href', `${url}?${nocache ? Utils.uid() : ''}`);
 		// swap prior to next paint event to avoid a brief white flash of no styles
 		const existing = document.head.querySelector(`link[rel=stylesheet][href^="${url}"]`);
 		document.head.appendChild(link);
@@ -28,7 +28,7 @@ const Loader = {
 		let ok;
 		const script = document.createElement('script');
 		if (type) script.setAttribute('type', type);
-		script.setAttribute('src', `${url}?${nocache ? Utils.getUid() : ''}`);
+		script.setAttribute('src', `${url}?${nocache ? Utils.uid() : ''}`);
 		script.addEventListener('load', () => {
 			try {
 				document.body.removeChild(script); // once js is in memory, dom tag serves no purpose

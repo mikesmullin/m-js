@@ -7,14 +7,14 @@ const stylus = require('stylus');
 const { relative, join } = require('path');
 const fs = require('fs');
 const RX_STYLUS_EXT = /\.styl$/;
-const DIST_DIR = __dirname;
 const delay = ms => new Promise(ok=>setTimeout(ok, ms));
 
 app.use('/', express.static(join(__dirname, '..')));
-
-const watcher = chokidar.watch('docs/**/*.{js,styl}', {
+console.log(process.cwd());
+const watcher = chokidar.watch('**/*.{js,styl}', {
 	cwd: __dirname,
-  persistent: true
+	ignored: /^docs\/server\.js$/,
+  persistent: true,
 });
 watcher
   .on('change', async path => {
@@ -42,7 +42,7 @@ watcher
 		else {
 			changedFile = path;
 		}
-		io.sockets.emit('fs.change', relative(DIST_DIR, changedFile));
+		io.sockets.emit('fs.change', relative(process.cwd(), join(__dirname,changedFile)));
 	});
 
 process.env.PORT = process.env.PORT || 3001;

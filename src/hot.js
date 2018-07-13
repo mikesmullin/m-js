@@ -16,11 +16,11 @@ Loader.loadJs('/socket.io/socket.io.js', 'text/javascript', false).then(() => {
 	});
 });
 
-const memory = {};
+const memory = { App: {} };
 
 export default {
 	reloader: App => () => {
-		if (null == memory.App) memory.App = App; else App = memory.App;
+		Object.assign(memory.App, App);
 
 		if (null != App.db) {
 			App.db.applyDefaults();

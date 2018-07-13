@@ -10,7 +10,7 @@ h5,
 h6 {
   font-size: 1rem;
   line-height: 1rem;
-  font-weight: normal;
+  font-weight: 400;
 }
 body {
   background: #fcfcfe;
@@ -18,7 +18,7 @@ body {
   display: flex;
   margin: 0;
   height: 100vh;
-  font: 300 1rem/1em Yantramanav, sans-serif;
+  font: 400 1rem/1em Yantramanav, sans-serif;
 }
 .left-sidebar {
   padding: 1rem;
@@ -105,10 +105,10 @@ main.right {
 }
 main.right strong {
   font-weight: 900;
-  color: #444;
+  color: #333;
 }
 main.right h1 {
-  color: #444;
+  color: #333;
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 1rem;
@@ -118,7 +118,7 @@ main.right h1.title {
   margin-bottom: 2.5rem;
 }
 main.right h2 {
-  color: #444;
+  color: #333;
   font-size: 1.5rem;
   font-weight: 500;
   margin-bottom: 1rem;
@@ -126,7 +126,7 @@ main.right h2 {
 main.right h3.subtitle {
   color: #333;
   font-size: 2rem;
-  font-weight: 300;
+  font-weight: 400;
   padding: 1rem;
   margin-bottom: 2rem;
   line-height: 1.3em;
@@ -150,6 +150,17 @@ main.right code {
 }
 main.right code a {
   text-decoration: none;
+}
+main.right pre code {
+  border-left: 3px solid #2c4d90;
+  padding: 1rem;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  border-radius: 0;
+  font-size: 0.7rem;
+  width: 100%;
+  display: block;
+  line-height: 1.3em;
 }
 main.right small,
 main.right .small {

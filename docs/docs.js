@@ -79,6 +79,12 @@ Pages.Layout = {
 								]
 							}},
 							{ li: {
+								a: 'Hot',
+								ul: [
+									{ $: Components.Link, $href: '/api/hot/reloader', _: '.reloader()' },
+								]
+							}},
+							{ li: {
 								a: 'Route',
 								ul: [
 									{ $: Components.Link, $href: '/api/route/init', _: '.init()' },
@@ -97,12 +103,6 @@ Pages.Layout = {
 								a: 'Utils',
 								ul: [
 									{ $: Components.Link, $href: '/api/utils/request', _: '.request()' },
-								]
-							}},
-							{ li: {
-								a: 'Hot',
-								ul: [
-									{ $: Components.Link, $href: '/api/hot/reloader', _: '.reloader()' },
 								]
 							}},
 						]
@@ -234,11 +234,117 @@ Pages.Api = {
 
 			{ h2: 'Cheatsheet' },
 			
+		]};
+	}
+};
+
+Pages.Api.m = {};
+Pages.Api.m.root = {
+	view(v) {
+		return { $: Pages.Layout, _: [
+			{ 'h1.title': 'm.root' },
+
+			{ h2: 'Description' },
+			
 			{ p: [
-				`An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application. `+
-				`They are the modular equivalent of bricks which you can use to build your website's look and feel. `+
-				`Examples of web components include buttons, links, forms, menus, loading spinners, etc. `+
-				`More than just HTML, they are stateful, defined primarily in Javascript, and may contain data which persists beyond the usual DOM lifecycle. ` ]},
+				`Holds the root component later used by `,
+				{ a: { $href: '/api/m/redraw', $onclick: Route.link, _: 'm.redraw()' }}, `.` ]},
+
+			{ pre: { code: [
+				`m.root = { p: 'Hello world!' };` ]}},
+		]};
+	}
+};
+Pages.Api.m.redraw = {
+	view(v) {
+		return { $: Pages.Layout, _: [
+			{ 'h1.title': 'm.redraw()' },
+
+			{ h2: 'Description' },
+			
+			{ p: [
+				`Applies shortest-path transforms for DOM to match state of Virtual DOM, `+
+				`beginning at the component specified by `,
+				{ a: { $href: '/api/m/root', $onclick: Route.link, _: 'm.root' }}, `.` ]},
+
+			{ pre: { code: [
+				`m.redraw();` ]}},
+		]};
+	}
+};
+Pages.Api.m.instance = {
+	view(v) {
+		return { $: Pages.Layout, _: [
+			{ 'h1.title': 'm.instance(component)' },
+
+			{ h2: 'Description' },
+			
+			{ p: [
+				`Instantiates what would otherwise be a static component.` ]},
+
+			{ p: [ `All components `+
+				`are effectively static singletons until they are wrapped by this function. `+
+				`In many cases such as pages or layouts you will never have more than a single `+
+				`instance on screen, so static is fine. In still other cases, you may `+
+				`want multiple buttons or list items on the screen but they are stateless, `+
+				`so static is fine.` ]},
+
+			{ p: [
+				`Of course there are definitely cases where you want each component to have `+
+				`a separate state. Still, you should consider whether global or local storage `+
+				`state would be better, because component instance state gets discarded `+
+				`as soon as it is removed from the Virtual DOM tree. If you want the state `+
+				`to survive a page refresh or be serialized in a permalink, consider storing `+
+				`and referencing it outside of the component.` ]},
+
+
+			{ pre: { code: [
+				`// crappy example; will do better later\n`+
+				`const Components = {};\n`+
+				`Components.Button = {\n`+
+				`  view: () => ({ button: v.attrs.label }) };\n\n`+
+				`m.root = {\n`+
+				` $: m.instance(Components.Button),\n`+
+				` $label: 'What up?' };\n\n`+
+				`m.render();\n` ]}},
+		]};
+	}
+};
+
+Pages.Api.db = {};
+Pages.Api.db.state = {
+	view(v) {
+		return { $: Pages.Layout, _: [
+			{ 'h1.title': 'db.state' },
+
+			{ h2: 'Description' },
+			
+			{ p: [
+				`Proxy for global state. Redux calls this the root reducer.` ]},
+
+			{ pre: { code: [
+				`Components.RememberedInput = {\n`+
+				`  oncreate(v) {\n`+
+				`    // restore value from global / local storage on first render.\n`+
+				`    // we do it here so it happens only once,\n`+
+				`    // rather than during subsequent renders,\n`+
+				`    // to avoid interrupting the user's typing...\n`+
+				`    v.dom.value = db.state.searchValue;\n`+
+				`  },\n`+
+				`\n`+
+				`  onkeyup(v) {\n`+
+				`    // as user types, update in-memory global state\n`+
+				`    db.state.searchValue = v.dom.value;\n`+
+				`    // persist global state to browser local storage\n`+
+				`    db.saveState();\n`+
+				`  },\n`+
+				`\n`+
+				`  view(v) {\n`+
+				`    return { 'input[type=text]': {\n`+
+				`      $onkeyup: Components.RememberedInput.onkeyup.bind(null,v)\n`+
+				`    }};\n`+
+				`  }\n`+
+				`};\n` ]}},
 		]};
 	}
 };
@@ -249,6 +355,10 @@ const App = {
 		Route.rewrite('/', '/guide');
 		Route.register('/guide', 'Guide', Pages.Guide);
 		Route.register('/api', 'API', Pages.Api);
+		Route.register('/api/m/root', 'm.root | API', Pages.Api.m.root);
+		Route.register('/api/m/redraw', 'm.redraw | API', Pages.Api.m.redraw);
+		Route.register('/api/m/instance', 'm.instance | API', Pages.Api.m.instance);
+		Route.register('/api/db/state', 'db.state | API', Pages.Api.db.state);
 		Route.init();
 	}	
 };

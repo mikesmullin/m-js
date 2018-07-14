@@ -13,7 +13,7 @@ h6 {
   font-weight: 400;
 }
 body {
-  background: #fcfcfe;
+  background: #fff;
   color: #000;
   display: flex;
   margin: 0;
@@ -102,6 +102,7 @@ main.right {
   flex-grow: 1;
   max-width: 640px;
   line-height: 1.3em;
+/* prism theming */
 }
 main.right strong {
   font-weight: 900;
@@ -112,8 +113,6 @@ main.right h1 {
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 1rem;
-}
-main.right h1.title {
   color: #2c4d90;
   margin-bottom: 2.5rem;
 }
@@ -138,29 +137,66 @@ main.right p {
   margin-bottom: 1rem;
   text-align: justify;
 }
-main.right code {
+main.right pre,
+main.right :not(pre) > code {
   background: #eee;
   color: #000;
-  font-family: "Source Code Pro", monospace;
-  font-size: 0.8rem;
+}
+main.right :not(pre) > code {
+  display: inline;
   -webkit-border-radius: 5px;
   -moz-border-radius: 5px;
   border-radius: 5px;
+  font-size: 0.8rem;
   padding: 0.1em 0.3em;
 }
-main.right code a {
+main.right :not(pre) > code a {
   text-decoration: none;
 }
-main.right pre code {
+main.right pre {
   border-left: 3px solid #2c4d90;
   padding: 1rem;
-  -webkit-border-radius: 0;
-  -moz-border-radius: 0;
-  border-radius: 0;
-  font-size: 0.7rem;
-  width: 100%;
-  display: block;
+}
+main.right pre > code {
+  tab-size: 2;
   line-height: 1.3em;
+  display: block;
+  width: 100%;
+  font-size: 0.65rem;
+}
+main.right .token.comment,
+main.right .token.prolog,
+main.right .token.doctype,
+main.right .token.cdata {
+  color: #888;
+}
+main.right .token.property,
+main.right .token.tag,
+main.right .token.boolean,
+main.right .token.number,
+main.right .token.constant,
+main.right .token.symbol {
+  color: #905;
+}
+main.right .token.selector,
+main.right .token.attr-name,
+main.right .token.string,
+main.right .token.builtin {
+  color: #690;
+}
+main.right .token.atrule,
+main.right .token.attr-value,
+main.right .token.punctuation,
+main.right .token.keyword {
+  color: #1e5799;
+}
+main.right .token.regex,
+main.right .token.important {
+  color: #e90;
+}
+main.right code,
+main.right div.code {
+  font-family: "Source Code Pro", monospace;
 }
 main.right small,
 main.right .small {

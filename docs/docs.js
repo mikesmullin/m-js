@@ -1,5 +1,6 @@
 import Route from '../src/route.js';
 import * as Utils from '../src/utils.js';
+import markdown from './markdown-jxml.js';
 
 const Components = {};
 Components.Link = {
@@ -250,7 +251,7 @@ Pages.Api.m.root = {
 				`Holds the root component later used by `,
 				{ a: { $href: '/api/m/redraw', $onclick: Route.link, _: 'm.redraw()' }}, `.` ]},
 
-			{ pre: { code: [
+			{ '.code.javascript': { pre: [
 				`m.root = { p: 'Hello world!' };` ]}},
 		]};
 	}
@@ -267,7 +268,7 @@ Pages.Api.m.redraw = {
 				`beginning at the component specified by `,
 				{ a: { $href: '/api/m/root', $onclick: Route.link, _: 'm.root' }}, `.` ]},
 
-			{ pre: { code: [
+			{ '.code.javascript': { pre: [
 				`m.redraw();` ]}},
 		]};
 	}
@@ -298,7 +299,7 @@ Pages.Api.m.instance = {
 				`and referencing it outside of the component.` ]},
 
 
-			{ pre: { code: [
+			{ '.code.javascript': { pre: [
 				`// crappy example; will do better later\n`+
 				`const Components = {};\n`+
 				`Components.Button = {\n`+
@@ -311,43 +312,45 @@ Pages.Api.m.instance = {
 	}
 };
 
-Pages.Api.db = {};
-Pages.Api.db.state = {
+const define = (uri, title, md) => {
+	const md_jxml = markdown(md);
+	Route.register(uri, title, {
+		view: v => ({ $: Pages.Layout, _: md_jxml }),
+	});
+};
+
+define('/api/db/state', 'db.state() | API', `
+# db.state()
+
+## Description
+
+Proxy for global state. Redux calls this the root reducer.
+
+~~~javascript
+Components.RememberedInput = {
+	oncreate(v) {
+		// restore value from global / local storage on first render.
+		// we do it here so it happens only once,
+		// rather than during subsequent renders,
+		// to avoid interrupting the user's typing...
+		v.dom.value = db.state.searchValue;
+	},
+
+	onkeyup(v) {
+		// as user types, update in-memory global state
+		db.state.searchValue = v.dom.value;
+		// persist global state to browser local storage
+		db.saveState();
+	},
+
 	view(v) {
-		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'db.state' },
-
-			{ h2: 'Description' },
-			
-			{ p: [
-				`Proxy for global state. Redux calls this the root reducer.` ]},
-
-			{ pre: { code: [
-				`Components.RememberedInput = {\n`+
-				`  oncreate(v) {\n`+
-				`    // restore value from global / local storage on first render.\n`+
-				`    // we do it here so it happens only once,\n`+
-				`    // rather than during subsequent renders,\n`+
-				`    // to avoid interrupting the user's typing...\n`+
-				`    v.dom.value = db.state.searchValue;\n`+
-				`  },\n`+
-				`\n`+
-				`  onkeyup(v) {\n`+
-				`    // as user types, update in-memory global state\n`+
-				`    db.state.searchValue = v.dom.value;\n`+
-				`    // persist global state to browser local storage\n`+
-				`    db.saveState();\n`+
-				`  },\n`+
-				`\n`+
-				`  view(v) {\n`+
-				`    return { 'input[type=text]': {\n`+
-				`      $onkeyup: Components.RememberedInput.onkeyup.bind(null,v)\n`+
-				`    }};\n`+
-				`  }\n`+
-				`};\n` ]}},
-		]};
+		return { 'input[type=text]': {
+			$onkeyup: Components.RememberedInput.onkeyup.bind(null,v),
+		}};
 	}
 };
+~~~
+`);
 
 const App = {
 	init() {
@@ -358,7 +361,6 @@ const App = {
 		Route.register('/api/m/root', 'm.root | API', Pages.Api.m.root);
 		Route.register('/api/m/redraw', 'm.redraw | API', Pages.Api.m.redraw);
 		Route.register('/api/m/instance', 'm.instance | API', Pages.Api.m.instance);
-		Route.register('/api/db/state', 'db.state | API', Pages.Api.db.state);
 		Route.init();
 	}	
 };

@@ -13,7 +13,7 @@ h1,h2,h3,h4,h5,h6
 	font-weight 400
 
 body
-	background #fcfcfe
+	background #fff
 	color #000
 	display flex
 	margin 0
@@ -103,14 +103,16 @@ main.right
 		font-size 2rem
 		font-weight 700
 		margin-bottom spacer
-		&.title
-			color color-blue
-			margin-bottom spacer*2.5
+
+		color color-blue
+		margin-bottom spacer*2.5
+
 	h2
 		color #333
 		font-size 1.5rem
 		font-weight 500
 		margin-bottom spacer
+
 	h3.subtitle
 		color #333
 		font-size 2rem
@@ -121,29 +123,45 @@ main.right
 		font-family "Patua One"
 		border-left 1em solid #aaa
 		background #ccc
+
 	p
 		margin-bottom spacer
 		text-align justify
 
-	code
+	pre,
+	:not(pre) > code
 		background #eee
 		color #000
-		font-family "Source Code Pro", monospace
-		font-size .8rem
+
+	:not(pre) > code
+		display inline
 		vendor('border-radius', 5px)
+		font-size .8rem
 		padding .1em .3em
 		a
 			text-decoration none
 
 	pre
-		code
-			border-left 3px solid color-blue
-			padding spacer
-			vendor('border-radius', 0);
-			font-size .7rem
-			width 100%
-			display block
+		border-left 3px solid color-blue
+		padding spacer
+		& > code
+			tab-size 2
 			line-height 1.3em
+			display block
+			width 100%
+			font-size .65rem
+
+	/* prism theming */
+	.token.comment,.token.prolog,.token.doctype,.token.cdata {color:#888;}
+	.token.property,.token.tag,.token.boolean,.token.number,.token.constant,.token.symbol {color:#905;}
+	.token.selector,.token.attr-name,.token.string,.token.builtin {color:#690;}
+	.token.atrule,.token.attr-value,.token.punctuation,.token.keyword {color:#1e5799;}
+	.token.regex,.token.important {color:#e90;}
+
+
+	code, div.code
+		font-family "Source Code Pro", monospace
+
 
 
 	small, .small

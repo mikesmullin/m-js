@@ -2,14 +2,35 @@ import Route from '../src/route.js';
 import * as Utils from '../src/utils.js';
 import markdown from './markdown-jxml.js';
 
+const _integrate_md = vnode => {
+	if (Utils.has(vnode, 'a', '$href')) { // intercept links
+		vnode.a.$onclick = Route.link;
+		return vnode;
+	}
+	else if (Utils.has(vnode, 'pre', 'code')) { // highlight code
+		return {
+			$: Components.Code,
+			$lang: Utils.get(null, vnode, 'pre', 'code', '$class'),
+			_: Utils.get(null, vnode, 'pre', 'code', '_'),
+		};
+	}
+	else return vnode;
+};
+
 const doc = (uri, title, md) => {
-	const md_jxml = markdown(md);
 	Route.register(uri, title, {
-		view: v => ({ $: Pages.Layout, _: md_jxml }),
+		view: v => ({ $: Pages.Layout, _: markdown(md, _integrate_md) }),
 	});
 };
 
+
 const Components = {};
+
+Components.Code = {
+	oncreate: v => window.Prism.highlightAllUnder(v.dom),
+	view: v => ({ pre: { code: { $class: 'lang-'+v.attrs.lang, _: v.children }}}),
+};
+
 Components.Link = {
 	view(v) {
 		return { 'li.list-item': {
@@ -235,51 +256,36 @@ Pages.Guide = {
 	}
 };
 
-Pages.Api = {
-	view(v) {
-		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'API' },
+doc('/api', 'API', `
+# API
 
-			{ h2: 'Cheatsheet' },
+## Cheatsheet
+`);
+
+doc('/api/m/root', 'm.root() | API', `
+# m.root()
+
+## Description
 			
-		]};
-	}
-};
+Holds the root component later used by [m.redraw()](/api/m/redraw).
 
-Pages.Api.m = {};
-Pages.Api.m.root = {
-	view(v) {
-		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'm.root' },
+~~~
+m.root = { p: 'Hello world!' };
+~~~
+`);
 
-			{ h2: 'Description' },
-			
-			{ p: [
-				`Holds the root component later used by `,
-				{ a: { $href: '/api/m/redraw', $onclick: Route.link, _: 'm.redraw()' }}, `.` ]},
+doc('/api/m/redraw', 'm.redraw() | API', `
+# m.redraw()
 
-			{ '.code.javascript': { pre: [
-				`m.root = { p: 'Hello world!' };` ]}},
-		]};
-	}
-};
-Pages.Api.m.redraw = {
-	view(v) {
-		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'm.redraw()' },
+## Description
 
-			{ h2: 'Description' },
-			
-			{ p: [
-				`Applies shortest-path transforms for DOM to match state of Virtual DOM, `+
-				`beginning at the component specified by `,
-				{ a: { $href: '/api/m/root', $onclick: Route.link, _: 'm.root' }}, `.` ]},
+Applies shortest-path transforms for DOM to match state of Virtual DOM,
+beginning at the component specified by [m.root](/api/m/root).
 
-			{ '.code.javascript': { pre: [
-				`m.redraw();` ]}},
-		]};
-	}
-};
+~~~
+m.redraw();
+~~~
+`);
 
 doc('/api/m/instance', 'm.instance() | API', `
 # m.instance(component)
@@ -354,9 +360,6 @@ const App = {
 		Route.formatTitle = s => `${s} | M.js Documentation`;
 		Route.rewrite('/', '/guide');
 		Route.register('/guide', 'Guide', Pages.Guide);
-		Route.register('/api', 'API', Pages.Api);
-		Route.register('/api/m/root', 'm.root | API', Pages.Api.m.root);
-		Route.register('/api/m/redraw', 'm.redraw | API', Pages.Api.m.redraw);
 		Route.init();
 	}	
 };

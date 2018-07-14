@@ -2,6 +2,13 @@ import Route from '../src/route.js';
 import * as Utils from '../src/utils.js';
 import markdown from './markdown-jxml.js';
 
+const doc = (uri, title, md) => {
+	const md_jxml = markdown(md);
+	Route.register(uri, title, {
+		view: v => ({ $: Pages.Layout, _: md_jxml }),
+	});
+};
+
 const Components = {};
 Components.Link = {
 	view(v) {
@@ -273,60 +280,50 @@ Pages.Api.m.redraw = {
 		]};
 	}
 };
-Pages.Api.m.instance = {
-	view(v) {
-		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'm.instance(component)' },
 
-			{ h2: 'Description' },
-			
-			{ p: [
-				`Instantiates what would otherwise be a static component.` ]},
+doc('/api/m/instance', 'm.instance() | API', `
+# m.instance(component)
 
-			{ p: [ `All components `+
-				`are effectively static singletons until they are wrapped by this function. `+
-				`In many cases such as pages or layouts you will never have more than a single `+
-				`instance on screen, so static is fine. In still other cases, you may `+
-				`want multiple buttons or list items on the screen but they are stateless, `+
-				`so static is fine.` ]},
+## Description
 
-			{ p: [
-				`Of course there are definitely cases where you want each component to have `+
-				`a separate state. Still, you should consider whether global or local storage `+
-				`state would be better, because component instance state gets discarded `+
-				`as soon as it is removed from the Virtual DOM tree. If you want the state `+
-				`to survive a page refresh or be serialized in a permalink, consider storing `+
-				`and referencing it outside of the component.` ]},
+Instantiates what would otherwise be a static component.
 
+All components
+are effectively static singletons until they are wrapped by this function.
+In many cases such as pages or layouts you will never have more than a single
+instance on screen, so static is fine. In still other cases, you may
+want multiple buttons or list items on the screen but they are stateless,
+so static is fine.
 
-			{ '.code.javascript': { pre: [
-				`// crappy example; will do better later\n`+
-				`const Components = {};\n`+
-				`Components.Button = {\n`+
-				`  view: () => ({ button: v.attrs.label }) };\n\n`+
-				`m.root = {\n`+
-				` $: m.instance(Components.Button),\n`+
-				` $label: 'What up?' };\n\n`+
-				`m.render();\n` ]}},
-		]};
-	}
-};
+Of course there are definitely cases where you want each component to have
+a separate state. Still, you should consider whether global or local storage
+state would be better, because component instance state gets discarded
+as soon as it is removed from the Virtual DOM tree. If you want the state
+to survive a page refresh or be serialized in a permalink, consider storing
+and referencing it outside of the component.
 
-const define = (uri, title, md) => {
-	const md_jxml = markdown(md);
-	Route.register(uri, title, {
-		view: v => ({ $: Pages.Layout, _: md_jxml }),
-	});
-};
+~~~js
+// crappy example; will do better later
+const Components = {};
+Components.Button = {
+	view: () => ({ button: v.attrs.label }) };
 
-define('/api/db/state', 'db.state() | API', `
+m.root = {
+	$: m.instance(Components.Button),
+	$label: 'What up?' };
+
+m.render();
+~~~
+`);
+
+doc('/api/db/state', 'db.state() | API', `
 # db.state()
 
 ## Description
 
 Proxy for global state. Redux calls this the root reducer.
 
-~~~javascript
+~~~js
 Components.RememberedInput = {
 	oncreate(v) {
 		// restore value from global / local storage on first render.
@@ -360,7 +357,6 @@ const App = {
 		Route.register('/api', 'API', Pages.Api);
 		Route.register('/api/m/root', 'm.root | API', Pages.Api.m.root);
 		Route.register('/api/m/redraw', 'm.redraw | API', Pages.Api.m.redraw);
-		Route.register('/api/m/instance', 'm.instance | API', Pages.Api.m.instance);
 		Route.init();
 	}	
 };

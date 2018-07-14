@@ -24,7 +24,6 @@
     "javascript-stringify": "^1.6.0",
     "nodemon": "^1.18.1",
     "rollup": "^0.62.0",
-    "rollup-plugin-copy": "^0.2.3",
     "rollup-plugin-gzip": "^1.4.0",
     "rollup-plugin-uglify-es": "0.0.1",
     "socket.io": "^2.1.1",

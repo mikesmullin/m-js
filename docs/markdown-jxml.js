@@ -19,7 +19,7 @@ const chunker = (chunks, rx, cb, replaceText=t=>null) => { // tokenizer + lexer 
 	return chunks;
 };
 const is = v => null != v, NA = undefined;
-const markdown = str => { // parser + compiler
+const markdown = (str, integrate=o=>o) => { // parser + compiler
 	// chunks (becomes p tag if any leftover text)
 	const RX_CHUNKS = /(?:^~~~(\w{1,99})?(?:\r\n|\n|$)([\s\S]{1,9999}?)(?:\r\n|\n|$)~~~(?:\r\n|\n|$)|((?:.{1,9999}(?:\r\n|\n|$)){1,99}))/gm;
 	// block elements (header, list item, otherwise p)
@@ -49,14 +49,11 @@ const markdown = str => { // parser + compiler
 		is(heading) ? { ['h'+chunks[i].lvl]: chunks[i].heading } :
 		is(list) ? { [/[*-]/.test(chunks[i].listStyle) ? 'ul' : 'ol']:
 			chunks.slice(i,i+l).map(item=>({ li: markdown(item.listItem) })) } :
-		is(code) ? { $: { // note: prism.js integration is optional
-			oncreate: v => window.Prism.highlightAllUnder(v.dom),
-			view: v => ({ pre: { code: { $class: 'lang-'+chunks[i].lang, _: chunks[i].code }}})
-		}} :
+		is(code) ? integrate({ pre: { code: { $class: chunks[i].lang, _: chunks[i].code }}}) :
 		is(p) ? { p: chunks.slice(i,i+l).map(atom=>
 			atom.text ? atom.text :
 			atom.br ? { br: {} } :
-			atom.anchor ? { a: { $href: atom.href,  _: atom.anchor }} :
+			atom.anchor ? integrate({ a: { $href: atom.href, _: atom.anchor }}) :
 			NA) } :
 		NA, t=>'');
 };

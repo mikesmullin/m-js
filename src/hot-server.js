@@ -1,14 +1,9 @@
 //
 // Quick-Start Template
 //
-// usage example:
+// for usage and examples, see:
 //
-//	const server = require('../src/hot-server')({
-//		app: app,
-//		cwd: __dirname,
-//		watch: '**/*.{js,styl}',
-//		ignored: /^docs\/server\.js$/,
-//	});
+//   https://mikesmullin.github.io/m-js/#/api/hot/reloader
 //
 
 const debug = require('debug')('m-js:hot-server');

@@ -685,7 +685,8 @@ server.listen(3000, () =>
 	console.log('Listening...'));
 ~~~
 
-File [hot-server.js](a) is a simple quick-start template to get you up and running
+File [hot-server.js](https://github.com/mikesmullin/m-js/blob/master/src/hot-server.js)
+is a simple quick-start template to get you up and running
 long enough to trial the feature, decide if its right for you, and determine 
 how it works.
 

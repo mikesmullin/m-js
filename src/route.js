@@ -13,6 +13,8 @@ const _routeMatches = uri => {
 	}
 };
 
+const isAbsoluteURI = uri => !/^(?:\w{1,99}:)?\/\//.test(uri);
+
 const _router = uri => {
 	// find matching route
 	let route;
@@ -78,7 +80,7 @@ const Route = {
 		const anchor = e.currentTarget || e.target;
 		if (null == anchor) return;
 		const href = anchor.getAttribute('href');
-		if (/^(?:\w{1,99}:)?\/\//.test(href)) return; // redirect browser
+		if (!isAbsoluteURI(href)) return; // redirect browser
 		else {
 			e.preventDefault();
 			e.stopPropagation();
@@ -90,7 +92,7 @@ const Route = {
 	},
 
 	redirect(uri) {
-		if (_routeMatches(uri)) document.location.hash = uri; // triggers onnavigate
+		if (isAbsoluteURI(uri)) document.location.hash = uri; // triggers onnavigate
 		else document.location.href = uri; // off-site
 	},
 

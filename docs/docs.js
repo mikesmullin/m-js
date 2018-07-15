@@ -57,7 +57,7 @@ Pages.Layout = {
 		return { '.left-sidebar': {
 				header: {
 					'.logomark': '',
-					'.logo': 'M.js',
+					'a.logo': { $href: '/', $onclick: Route.link, _: 'M.js' },
 					'.version': '1.0.0',
 				},
 				'ul.link-list': [
@@ -69,21 +69,42 @@ Pages.Layout = {
 				/^\/guide/.test(Route.uri) ?
 					{
 						ul: [
-							{
-								li: {
-									a: 'Getting Started',
-									ul: [
-										{ 'li.active': { 'a.link': 'Introduction', ul: [
-											{ li: { 'a.link': 'Tutorial' } },
-											{ li: { 'a.link': 'Learning Resources' } },
-											{ li: { 'a.link': 'Getting Help' } },
-										]}},
-										{ 'li': { 'a.link': 'Components', ul: [
-											{ li: { 'a.link': 'Lifecycle methods' } },
-										]}},
-									]
-								}
-							}
+							{ li: {
+								a: 'Quick Start',
+								ul: [
+									{ $: Components.Link, $href: '/guide/welcome/featureset', _: 'Featureset' },
+									{ $: Components.Link, $href: '/guide/welcome/introduction', _: 'Introduction' },
+									{ $: Components.Link, $href: '/guide/welcome/examples', _: 'Examples' },
+									{ $: Components.Link, $href: '/guide/welcome/releases', _: 'Releases' },
+									{ $: Components.Link, $href: '/guide/welcome/support', _: 'Support' },
+								]
+							}},
+							{ li: {
+								a: 'VNode',
+								ul: [
+									{ $: Components.Link, $href: '/guide/vnode/jxml/introduction', _: 'Why JXML?' },
+									{ $: Components.Link, $href: '/guide/vnode/selectors', _: 'Selectors' },
+									{ $: Components.Link, $href: '/guide/vnode/attributes', _: 'Attributes' },
+									{ $: Components.Link, $href: '/guide/vnode/hierarchy', _: 'Hierarchy' },
+									{ $: Components.Link, $href: '/guide/vnode/security', _: 'Security' },
+								]
+							}},
+							{ li: {
+								a: 'Virtual DOM',
+								ul: [
+									{ $: Components.Link, $href: '/guide/virtual-dom/introduction', _: 'What is it?' },
+									{ $: Components.Link, $href: '/guide/virtual-dom/rendering', _: 'Rendering' },
+									{ $: Components.Link, $href: '/guide/virtual-dom/keys', _: 'Keys' },
+								]
+							}},
+							{ li: {
+								a: 'Components',
+								ul: [
+									{ $: Components.Link, $href: '/guide/components/introduction', _: 'What are they?' },
+									{ $: Components.Link, $href: '/guide/components/lifecycle', _: 'Lifecycle' },
+									{ $: Components.Link, $href: '/guide/components/opinions', _: 'Opinions' },
+								]
+							}},
 						]
 					} :
 					{
@@ -143,108 +164,177 @@ Pages.Layout = {
 						]
 					}
 			},
-			'main.right': v.children,
+			'main.right': [
+				...v.children,
+
+				{ footer: {
+					p: 'License MIT © Mike Smullin',
+				}},
+			],
 		};
 	}
 };
 
+doc('/guide/welcome/introduction', 'Introduction', `
+# Introduction
+			
+## What is a web component?
+
+An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application.
+They are the modular equivalent of bricks which you can use to build your website's look and feel.
+Examples of web components include buttons, links, forms, menus, loading spinners, etc.
+More than just HTML, they are stateful, defined primarily in Javascript, and may contain data which persists beyond the usual DOM lifecycle.
+
+Components are typically bundled so that all dependencies (~.css~, images, ~.js~, ~.html~,
+and any other assets) are in a single file or folder for easy import and removal from a project.
+Sometimes exchange markets are made to redistribute and sell above-average components.
+
+## What is a component framework?
+
+The central idea is reusability across devices and platforms—desktop and mobile—
+via a transparent browser, or a native analog, bundled and shipped with your distribution.
+Your application can now provide the same experience, no matter how users prefer to interface with it,
+but you have to follow a set of guidelines, and sometimes install dependencies—both of which are the framework.
+
+*WARNING*: Our mobile support is limited to the mobile browser only. We don't compile native.
+You could still bundle and ship with [Electron](https://electronjs.org/) or
+[Apache Cordova](https://cordova.apache.org/) if you need, but you'd be on your own.
+`);
+
+doc('/guide/vnode/jxml/introduction', 'JXML', `
+# JXML
+
+In this framework, JXML is the data structure used to describe a ~VNode~,
+and the return type of all
+[component.view()](/guide/components/introduction) methods.
+
+## Why JXML?
+
+Designed to be:
+
+- easier to read and write than alternatives 
+	a) [React](https://reactjs.org/) [JSX](https://reactjs.org/docs/introducing-jsx.html), and
+	b) [Mithril.js](https://mithril.js.org/) [m()](https://mithril.js.org/hyperscript.html)
+- not dependent on any extra IDE or transpiler/preprocessor support. ie. [Babel.js](https://babeljs.io/)
+- debuggable; can set a breakpoint on every part of the template in your code.
+- smallest footprint in-memory and on-disk.
+- the fastest runtime format.
+
+## What is JXML?
+A minimalist lossless JSON representation of XML. 
+
+Forked from the old and deprecated
+[Mozilla](https://developer.mozilla.org/en-US/docs/Archive/JXON)
+[JXON](https://github.com/tyrasd/jxon)
+and common [xml2json](https://www.npmjs.com/package/xml2json) output.
+
+Main differences include:
+
+- Support for tags names that include CSS classes, ID, and other attributes. e.g.,
+
+~~~js
+{ 'div#patient-1023.patient[prognosis=terminal]': 'Freddie' }
+~~~
+
+- Support for components using the dollar ~$~ attribute. e.g.,
+
+~~~js
+{ $: Components.TextInput, $name: 'cash', $defaultValue: 1000.00 }
+~~~
+
+- Support for many variations of nesting children,. e.g.,
+
+~~~js
+[
+	{ ul: [
+		{ li: 'one' },
+		{ li: { _: 'two' } },
+		{ li: { _: [ 'three' ] }}
+	]},
+	{ ol: {
+		'li.four': 'four',
+		'li.five': { _: 'five' },
+		'li.six': { _: [ 'six' ] } },
+	}},
+]
+~~~
+
+*NOTE*: The original JXON child hierachy is not supported. Only the above syntax.
+
+## Background
+
+For a component to work the same in different places, it needs a way to be described in a neutral form
+that is eventually compatible with both targets. In the case of a web browser, the target is the Document
+Object Model (or DOM) which, for the purposes of backward compatibility, tends to yield very low performance.
+Today, our users are conditioned to expect low latency, hyper responsive animations, transitions, and
+even the use of physics with spring dynamics, collision, and layering effects.
+
+JXML and the Virtual DOM wed perfectly to help us meet modern user demands at high FPS.
+
+Continue reading the next chapter to learn more about our version of JXML.
+`);
+
+doc('/guide/virtual-dom/introduction', 'Virtual DOM', `
+# Virtual DOM
+
+## What is it?
+			
+The Virtual DOM holds a minimalist duplicate of the tag hierarchy, attributes, inner text, and state of all components entirely in
+Javascript memory at runtime. This is the authoritative copy; when changes are made to the tree, they happen
+virtually first, and are buffered until it is time to render the next frame, where a single-pass render is performed,
+which then finally applies the shortest-path transformations to the DOM tree.
+
+*NOTE*: The DOM is a form of
+[directed acyclic graph](https://en.wikipedia.org/wiki/Directed_acyclic_graph),
+and therefore
+[Graph Theory](https://en.wikipedia.org/wiki/Graph_theory)
+can be
+[applied](https://www.youtube.com/watch?v=Ce3RNfRbdZ0)
+to further reduce CPU cycles per frame.
+
+## Background
+
+Frameworks like
+[React](https://reactjs.org/)
+[claim](https://reactjs.org/docs/reconciliation.html)
+they are performing
+[advanced hueristics](https://grfia.dlsi.ua.es/ml/algorithms/references/editsurvey_bille.pdf)
+on top of this to reduce CPU cycles. But those are magic-laden unicorn farts designed
+to keep you dependent.
+
+The two most complex transformations that happen in DOM trees are
+a) moving a child between siblings, and b) moving a child between parents. In practice, these happen infrequently, such as the
+drag-and-drop-to-reorder-list, and the rarer drag-from-list-to-other-list. When such cases occur, benchmarks have shown it to be both faster and easier to simply write your code
+for this case explicitly, by changing the child's parent node on a successful drag operation, akin to a linked list reordering operation,
+rather than challenging the VDOM to figure it out in constant time on every frame with an N-deep tree.
+This is why component key properties are only useful among siblings.
+`);
+
+doc('/api/m/root', 'm.root()', `
+# m.root()
+
+## Description
+			
+Holds the root component later used by [m.redraw()](/api/m/redraw).
+
+You will only have to set this if you choose handle routing manually instead
+of using [Route.init()](/api/route/init).
+
+## Example
+
+~~~js
+m.root = { p: 'Hello world!' };
+~~~
+`);
+
 Pages.Guide = {
 	view(v) {
 		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'Introduction' },
+			{ 'h1.title': 'Featureset' },
 
 			{ 'h3.subtitle': [ `“M.js is a minimalist, modernist, UI component framework for the web.”` ]},
 			
-			{ h2: 'What is a web component?' },
-			
-			{ p: [
-				`An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application. `+
-				`They are the modular equivalent of bricks which you can use to build your website's look and feel. `+
-				`Examples of web components include buttons, links, forms, menus, loading spinners, etc. `+
-				`More than just HTML, they are stateful, defined primarily in Javascript, and may contain data which persists beyond the usual DOM lifecycle. ` ]},
 
-			{ p: [
-				`Components are typically bundled so that all dependencies (`,
-				{ code: '.css' },
-				`, images, `,
-				{ code: '.js' },
-				`, `,
-				{ code: '.html' },
-				`, and any other assets) are in a single file or folder for easy import and removal from a project. `+
-				`Sometimes exchange markets are made to redistribute and sell above-average components.` ]},
-			
-			{ h2: 'What is a component framework?' },
-			
-			{ p: `The central idea is reusability across devices and platforms—desktop and mobile—`+
-				`via a transparent browser, or a native analog, bundled and shipped with your distribution. `+
-				`Your application can now provide the same experience, no matter how users prefer to interface with it, `+
-				`but you have to follow a set of guidelines, and sometimes install dependencies—both of which are the framework.` },
-
-			{ p: [
-				{ strong: 'WARNING' }, `: Our mobile support is limited to the mobile browser only. We don't compile native. `+
-				`You could still bundle and ship with `,
-				{ a: { $href: 'https://electronjs.org/', _: 'Electron' }},
-				` or `,
-				{ a: { $href: 'https://cordova.apache.org/', _: 'Apache Cordova' }},
-				` if you need, but you'd be on your own.` ]},
-			
-			{ h2: 'What is the Virtual DOM?' },
-			
-			{ p: `The Virtual DOM holds a minimalist duplicate of the tag hierarchy, attributes, inner text, and state of all components entirely in `+
-				`Javascript memory at runtime. This is the authoritative copy; when changes are made to the tree, they happen `+
-				`virtually first, and are buffered until it is time to render the next frame, where a single-pass render is performed, `+
-				`which then finally applies the shortest-path transformations to the DOM tree.` },
-			
-			{ p: [
-				{ strong: 'NOTE' }, `: The DOM is a form of `, 
-				{ a: { $href: 'https://en.wikipedia.org/wiki/Directed_acyclic_graph', _: 'directed acyclic graph' }},
-				`, and therefore `,
-				{ a: { $href: 'https://en.wikipedia.org/wiki/Graph_theory', _: 'Graph Theory' }},
-				` can be `,
-				{ a: { $href: 'https://www.youtube.com/watch?v=Ce3RNfRbdZ0', _: 'applied' }},
-				,` to further reduce CPU cycles per frame.` ]},
-			
-			{ p: [ { strong : 'RANT: ' }, `Frameworks like `, 
-				{ a: { $href: 'https://reactjs.org/', _: 'React' } }, 
-				` `, 
-				{ a: { $href: 'https://reactjs.org/docs/reconciliation.html', _: 'claim' }}, 
-				` they are performing `,
-				{ a: { $href: 'https://grfia.dlsi.ua.es/ml/algorithms/references/editsurvey_bille.pdf', _: 'advanced hueristics' } },
-				` on top of this to reduce CPU cycles. But those are magic-laden unicorn farts designed `+
-				`to keep you dependent. The two most complex transformations that happen in DOM trees are `+
-				`a) moving a child between siblings, and b) moving a child between parents. In practice, these happen infrequently, such as the `+
-				`drag-and-drop-to-reorder-list, and the rarer drag-from-list-to-other-list. When such cases occur, benchmarks have shown it to be both faster and easier to simply write your code `+
-				`for this case explicitly, by changing the child's parent node on a successful drag operation, akin to a linked list reordering operation, `+
-				`rather than challenging the VDOM to figure it out in constant time on every frame with an N-deep tree. `+
-				`This is why component key properties are only useful among siblings.` ]},
-			
-			{ h2: 'What is JXML?' },
-			
-			{ p: [ `A minimalist lossless JSON representation of XML. Differing slightly from the deprecated `,
-				{ a: { $href: 'https://developer.mozilla.org/en-US/docs/Archive/JXON', _: 'Mozilla' }}, ' ',
-				{ a: { $href: 'https://github.com/tyrasd/jxon', _: 'JXON' }},
-				`, and the common `,
-				{ a: { $href: 'https://www.npmjs.com/package/xml2json', _: 'xml2json' }},
-				` output. Designed to be both easier to read and write than alternatives such as React's `,
-				{ a: { $href: 'https://reactjs.org/docs/introducing-jsx.html', _: 'JSX' }},
-				` and the `,
-				{ code: { a: { $href: 'https://mithril.js.org/hyperscript.html', _: 'm()' }}}, ` function from `,
-				{ a: { $href: 'https://mithril.js.org/', _: 'Mithril.js' }},
-				`, with the additional benefits of fastest runtime format, lowest memory footprint, `+
-				`and no `, 
-				{ a: { $href: 'https://babeljs.io/', _: 'Babel' }},
-				` transpiler/preprocessor required.` ]},
-			
-			{ p: `In this framework, JXML is the data structure used to describe your components.` },
-			
-			{ p: [ {strong: 'BACKGROUND: ' }, `For a component to work the same in different places, it needs a way to be described in a neutral form `+
-				`that is eventually compatible with both targets. In the case of a web browser, the target is the Document `+
-				`Object Model (or DOM) which, for the purposes of backward compatibility, tends to yield very low performance. `+
-				`Today, our users are conditioned to expect low latency, hyper responsive animations, transitions, and `+
-				`even the use of physics with spring dynamics, collision, and layering effects.` ]},
-			
-			{ p: `JXML + VDOM help us meet modern user demands at high FPS.` },
-			
 			{ h2: `Why distribute ES6? Why not support older browsers?` },
 			
 			{ p: `This is not a general purpose framework. Its specific purposes are low memory footprint, and high performance. `+
@@ -254,10 +344,6 @@ Pages.Guide = {
 				`Also, its ${new Date().getFullYear()}—everyone is staying `,
 				{ a: { $href: 'https://en.wikipedia.org/wiki/Usage_share_of_web_browsers', _: 'current' }},
 				` due to rampant exploitation of security vulnerabilities. Friends don't let friends use non-free, privacy violating, insecure browsers.` ]},
-
-			{ footer: {
-				p: 'License MIT © Mike Smullin',
-			}},
 		]};
 	}
 };
@@ -985,13 +1071,18 @@ Where
 
 ## Description
 
-Navigates
-[document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location)
-to the given ~uri~.
+Navigates to the given ~uri~.
 
-If ~uri~ matches a pattern registered by [Route.register()](/api/route/register),
-then [m.root](/api/m/root) will instead be updated to point at the component
-whose pattern is matched.
+If ~uri~ is an absolute URI beginning with ~http://~ or ~https://~ or ~//~ then
+it is considered an external link, and 
+[document.location.href](https://developer.mozilla.org/en-US/docs/Web/API/Document/location)
+will be updated to point at it, resulting in the browser navigating away from the
+current single page application.
+
+Otherwise, the ~uri~ is considered a relative or local link, and the normal
+logic within [Route.register()](/api/route/register) applies, aborting the page
+refresh, and instead updating [m.root](/api/m/root) to point at a component
+whose pattern is matched, followed by a call to [m.redraw()](/api/m/redraw).
 
 ## Example
 
@@ -1200,8 +1291,9 @@ const App = {
 			'/api/' === uri.substr(0,5) ? ' | API' :
 			'/guide/' === uri.substr(0,7) ? ' | Guide' :
 			'') + ' | M.js Documentation';
-		Route.rewrite('/', '/guide');
-		Route.register('/guide', 'Guide', Pages.Guide);
+		Route.rewrite('/', '/guide/welcome/featureset');
+		Route.rewrite('/guide', '/guide/welcome/featureset');
+		Route.register('/guide/welcome/featureset', 'Featureset', Pages.Guide);
 		Route.init();
 	}	
 };

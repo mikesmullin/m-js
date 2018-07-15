@@ -48,6 +48,7 @@ main.right {
   transform: rotate(45deg);
 }
 .left-sidebar header .logo {
+  color: #000;
   font-size: 1.5rem;
   margin-right: 0.25rem;
 }
@@ -126,7 +127,8 @@ main.right h2 {
   margin-bottom: 1rem;
   margin-top: 1.75rem;
 }
-main.right h3.subtitle {
+main.right h3,
+main.right .subtitle {
   color: #333;
   font-size: 2rem;
   font-weight: 400;
@@ -215,8 +217,9 @@ main.right .warning * {
   color: #75730b;
 }
 main.right footer {
-  border-top: 1px solid #bbb;
+  border-top: 1px solid #eee;
   padding-top: 1rem;
+  color: #ccc;
 }
 /* prism theming */
 .token.comment,

@@ -123,16 +123,14 @@ Pages.Layout = {
 							{ li: {
 								a: 'Route',
 								ul: [
-									{ $: Components.Link, $href: '/api/route/init', _: '.init()' },
-									{ $: Components.Link, $href: '/api/route/register', _: '.register()' },
-									{ $: Components.Link, $href: '/api/route/redirect', _: '.redirect()' },
+									{ $: Components.Link, $href: '/api/route/titleFormat', _: '.titleFormat' },
 									{ $: Components.Link, $href: '/api/route/rewrite', _: '.rewrite()' },
-									{ $: Components.Link, $href: '/api/route/onnavigate', _: '.onnavigate()' },
+									{ $: Components.Link, $href: '/api/route/register', _: '.register()' },
+									{ $: Components.Link, $href: '/api/route/init', _: '.init()' },
 									{ $: Components.Link, $href: '/api/route/link', _: '.link()' },
+									{ $: Components.Link, $href: '/api/route/redirect', _: '.redirect()' },
 									{ $: Components.Link, $href: '/api/route/uri', _: '.uri' },
-									{ $: Components.Link, $href: '/api/route/formatTitle', _: '.formatTitle' },
-									{ $: Components.Link, $href: '/api/route/title', _: '.title' },
-									{ $: Components.Link, $href: '/api/route/titleOf', _: '.titleOf()' },
+									{ $: Components.Link, $href: '/api/route/getTitleByURI', _: '.getTitleByURI()' },
 								]
 							}},
 							{ li: {
@@ -269,7 +267,7 @@ doc('/api', 'API', `
 ## Cheatsheet
 `);
 
-doc('/api/m/root', 'm.root() | API', `
+doc('/api/m/root', 'm.root()', `
 # m.root()
 
 ## Description
@@ -284,7 +282,7 @@ m.root = { p: 'Hello world!' };
 ~~~
 `);
 
-doc('/api/m/redraw', 'm.redraw() | API', `
+doc('/api/m/redraw', 'm.redraw()', `
 # m.redraw()
 
 ## Description
@@ -321,7 +319,7 @@ m.redraw();
 ~~~
 `);
 
-doc('/api/m/instance', 'm.instance() | API', `
+doc('/api/m/instance', 'm.instance()', `
 # m.instance(component)
 
 ## Description
@@ -359,7 +357,7 @@ m.render();
 ~~~
 `);
 
-doc('/api/db/state', 'db.state() | API', `
+doc('/api/db/state', 'db.state()', `
 # db.state()
 
 ## Description
@@ -408,7 +406,7 @@ Components.RememberedInput = {
 ~~~
 `);
 
-doc('/api/db/saveState', 'db.saveState() | API', `
+doc('/api/db/saveState', 'db.saveState()', `
 # db.saveState()
 
 ## Description
@@ -422,7 +420,7 @@ db.saveState(); // above data is now retained by browser between sessions
 ~~~
 `);
 
-doc('/api/db/reloadState', 'db.reloadState() | API', `
+doc('/api/db/reloadState', 'db.reloadState()', `
 # db.reloadState()
 
 ## Description
@@ -436,7 +434,7 @@ console.log(db.state.hello); // 'world'
 ~~~
 `);
 
-doc('/api/db/defaults', 'db.defaults | API', `
+doc('/api/db/defaults', 'db.defaults', `
 # db.defaults
 
 ## Description
@@ -461,7 +459,7 @@ Utils.onReady(()=> {
 ~~~
 `);
 
-doc('/api/db/applyDefaults', 'db.applyDefaults() | API', `
+doc('/api/db/applyDefaults', 'db.applyDefaults()', `
 # db.applyDefaults()
 
 ## Description
@@ -469,7 +467,7 @@ doc('/api/db/applyDefaults', 'db.applyDefaults() | API', `
 See [db.defaults](/api/db/defaults) for details and example usage.
 `);
 
-doc('/api/db/resetState', 'db.resetState() | API', `
+doc('/api/db/resetState', 'db.resetState()', `
 # db.resetState()
 
 ## Description
@@ -494,7 +492,7 @@ Utils.onReady(()=> {
 ~~~
 `);
 
-doc('/api/db/actions', 'db.actions | API', `
+doc('/api/db/actions', 'db.actions', `
 # db.actions
 
 ## Description
@@ -558,7 +556,7 @@ console.log(db.history); // [ ['MOAR_BEANS', 10], ['MOAR_BEANS', 100] ]
 ~~~
 `);
 
-doc('/api/db/history', 'db.history | API', `
+doc('/api/db/history', 'db.history', `
 # db.history
 
 ## Description
@@ -571,7 +569,7 @@ console.log(db.history); // e.g.
 ~~~
 `);
 
-doc('/api/db/saveHistory', 'db.saveHistory() | API', `
+doc('/api/db/saveHistory', 'db.saveHistory()', `
 # db.saveHistory()
 
 ## Description
@@ -584,7 +582,7 @@ db.saveHistory();
 ~~~
 `);
 
-doc('/api/db/reloadHistory', 'db.reloadHistory() | API', `
+doc('/api/db/reloadHistory', 'db.reloadHistory()', `
 # db.reloadHistory()
 
 ## Description
@@ -597,7 +595,7 @@ db.reloadHistory();
 ~~~
 `);
 
-doc('/api/db/replayHistory', 'db.replayHistory() | API', `
+doc('/api/db/replayHistory', 'db.replayHistory()', `
 # db.replayHistory()
 
 ## Description
@@ -609,7 +607,7 @@ db.replayHistory();
 ~~~
 `);
 
-doc('/api/db/undoHistory', 'db.undoHistory() | API', `
+doc('/api/db/undoHistory', 'db.undoHistory()', `
 # db.undoHistory()
 
 ## Description
@@ -641,7 +639,7 @@ console.log(db.state.bladder); // 'full'
 ~~~
 `);
 
-doc('/api/db/resetHistory', 'db.resetHistory() | API', `
+doc('/api/db/resetHistory', 'db.resetHistory()', `
 # db.resetHistory()
 
 ## Description
@@ -657,7 +655,7 @@ console.log(db.history) // []
 ~~~
 `);
 
-doc('/api/hot/reloader', 'Hot.reloader() | API', `
+doc('/api/hot/reloader', 'Hot.reloader()', `
 # Hot.reloader(app)
 
 ## Description
@@ -729,19 +727,121 @@ if you need a more robust implementation you can simply copy and improve the
 example provided, as needed.
 `);
 
-doc('/api/route/init', 'Route.init() | API', `
-# Route.init()
+doc('/api/route/titleFormat', 'Route.titleFormat', `
+# Route.titleFormat
+
+Holds a ~Function~ of signature ~(uri:string, title:string) => title:string~
+which uses its input to inform what the current page's title should be.
+
+The ~uri~ parameter is the result of [Route.uri](/api/route/uri).
+
+The ~title~ parameter is the ~String~ passed with the component when
+[Route.register()](/api/route/register) was called.
 
 ## Description
 
-This is a template.
+Determines what the current page title should be.
+
+The default value is an identity function ~(_,title)=>title~ which simply sets the title
+to exactly what was given when [Route.register()](/api/route/register) was called.
+
+If you want to change how title strings are formatted, you are expected to overwrite this function.
+
+## Example
 
 ~~~js
-var workInProgress = true;
+Route.titleFormat = (uri,s) => s + (
+	'/api/' === uri.substr(0,5) ? ' | API' :
+	'/guide/' === uri.substr(0,7) ? ' | Guide' :
+	'') + ' | M.js Documentation';
 ~~~
 `);
 
-doc('/api/utils/request', 'Utils.request() | API', `
+doc('/api/route/rewrite', 'Route.rewrite()', `
+# Route.rewrite(from,to)
+
+The ~from~ parameter is a ~String~ that should match the expected result of
+[Route.uri](/api/route/uri).
+
+The ~to~ parameter is a ~String~ that will be passed to
+[Route.redirect()](/api/route/redirect).
+
+## Description
+
+Registers a route that will trigger an automatic
+[Route.redirect()](/api/route/redirect) if the ~from~ URI is ever visited.
+
+## Example
+
+~~~js
+Route.rewrite('/', '/guide');
+Route.register('/guide', 'Guide', Pages.Guide);
+// ...
+Route.init();
+~~~
+`);
+
+doc('/api/route/register', 'Route.register()', `
+# Route.register(uri, title, component)
+
+The ~uri~ parameter is a RegExp ~String~ pattern. 
+
+The ~title~ parameter is a ~String~ which will be used by
+[Route.titleFormat()](/api/route/titleFormat)
+to compose the final
+[document.title](https://developer.mozilla.org/en-US/docs/Web/API/Document/title).
+
+The ~component~ parameter is an ~Object~ with a defined ~view(v)~ method which
+will return a ~VNode~ when invoked by [m.redraw()](/api/m/redraw).
+
+## Description
+
+Register a given ~component~ with the router.
+
+When
+[document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location)
+changes, the 
+[window.onhashchange](https://developer.mozilla.org/en-US/docs/Web/Events/hashchange)
+event is fired. The router is bound and listening for this event. When fired,
+router logic finds the first registered component whose ~uri~ pattern matches
+the destination [Route.uri](/api/route/uri). If a match is found, router will
+modify [m.root](/api/m/root) to point at the pattern's associated ~component~.
+
+It will also set the
+[document.title](https://developer.mozilla.org/en-US/docs/Web/API/Document/title)
+to the result of
+[Route.titleFormat](/api/route/titleFormat)( [Route.uri](/api/route/uri) , ~title~ ).
+
+## Example
+
+~~~js
+Route.register('/api', 'API', Pages.Api);
+Route.init();
+~~~
+
+*NOTE*: Use of the Route module is entirely optional.
+
+Should you choose to use it, here are its few opinionated restrictions:
+
+- You can register any number of routes.
+- You are expected to define at least one route.
+- Only one route can match, so the earliest registered route wins.
+- If you register two components under the same ~uri~ pattern, the latter will
+  override the former.
+
+When no routes are defined, or no routes are matched, a default route is
+provided under the URI ~404~ which will display a *404 Not Found* error. You
+can override this registration, but you don't have to.
+
+## Example
+
+~~~js
+Route.register('404', 'Not found', {
+	view: v=>({ 'h1': 'Error 404 Page not found' }) });
+~~~
+`);
+
+doc('/api/utils/request', 'Utils.request()', `
 # Utils.request(method, url, data)
 
 Parameter ~method~ is a ~String~ with value one of ~GET~, ~POST~, ~PUT~, ~DELETE~, etc.
@@ -811,7 +911,9 @@ Pages.Ideas.New = {
 ~~~
 `);
 
-// doc('/api/db/state', 'db.state() | API', `
+
+
+// doc('/api/db/state', 'db.state()', `
 // # db.state()
 //
 // ## Description
@@ -828,7 +930,10 @@ Pages.Ideas.New = {
 
 const App = {
 	init() {
-		Route.formatTitle = s => `${s} | M.js Documentation`;
+		Route.titleFormat = (uri,s) => s + (
+			'/api/' === uri.substr(0,5) ? ' | API' :
+			'/guide/' === uri.substr(0,7) ? ' | Guide' :
+			'') + ' | M.js Documentation';
 		Route.rewrite('/', '/guide');
 		Route.register('/guide', 'Guide', Pages.Guide);
 		Route.init();

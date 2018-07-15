@@ -44,11 +44,20 @@ const Route = {
 		Route.uri = to;
 	},
 
-	link: Utils.trapEvent(e => {
-		const link = e.currentTarget || e.target;
-		if (null == link) return;
-		Route.redirect(link.getAttribute('href'));
-	}),
+	link: e => {
+		const anchor = e.currentTarget || e.target;
+		if (null == anchor) return;
+		const href = anchor.getAttribute('href');
+		if (/^(\w{1,99}:)?\/\//.test(href)) return; // redirect browser
+		else {
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.ctrlKey) window.open(document.location.origin + 
+				document.location.pathname +'#'+ href);
+			else Route.redirect(href); // redraw page
+			return false;
+		}
+	},
 
 	rewrite(from, to) {
 		Route.register(from, '', {

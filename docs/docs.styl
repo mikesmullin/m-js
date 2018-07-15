@@ -132,6 +132,7 @@ main.right
 	:not(pre) > code
 		background #eee
 		color #000
+		font-family "Source Code Pro", monospace
 
 	:not(pre) > code
 		display inline
@@ -149,27 +150,42 @@ main.right
 			line-height 1.3em
 			display block
 			width 100%
-			font-size .65rem
-
-	/* prism theming */
-	.token.comment,.token.prolog,.token.doctype,.token.cdata {color:#888;}
-	.token.property,.token.tag,.token.boolean,.token.number,.token.constant,.token.symbol {color:#905;}
-	.token.selector,.token.attr-name,.token.string,.token.builtin {color:#690;}
-	.token.atrule,.token.attr-value,.token.punctuation,.token.keyword {color:#1e5799;}
-	.token.regex,.token.important {color:#e90;}
-
-
-	code, div.code
-		font-family "Source Code Pro", monospace
-
-
+			font-size 1rem
 
 	small, .small
 		font-size .8rem
+
+	ul, ol
+		margin 0
+		padding 0
+		line-height 1em
+		li
+			line-height 1.3em
+			margin 0 0 0 spacer
+			padding 0
+			& > p
+				margin-bottom 0
+			&:last-child
+				margin-bottom 1rem
+
+	.warning
+		display block
+		background #f9f9bb
+		padding 1rem
+		&, & *
+			color #75730b
 
 	footer
 		border-top 1px solid #bbb
 		padding-top spacer
 		
+
+/* prism theming */
+.token.comment,.token.prolog,.token.doctype,.token.cdata {color:#888;}
+.token.property,.token.tag,.token.boolean,.token.number,.token.constant,.token.symbol {color:#905;}
+.token.selector,.token.attr-name,.token.string,.token.builtin {color:#690;}
+.token.atrule,.token.attr-value,.token.punctuation,.token.keyword {color:#1e5799;}
+.token.regex,.token.important {color:#e90;}
+
 body
 	--stylesheet-loaded true

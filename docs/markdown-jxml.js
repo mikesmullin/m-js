@@ -9,7 +9,7 @@ const chunker = (chunks, rx, cb, replaceText=t=>null) => { // tokenizer + lexer 
 		lastIndex = 0;
 		while (null != (m = rx.exec(chunk))) {
 			token = cb(m.index, m[0].length, m.slice(0));
-			if (lastIndex < m.index) push(replaceText(chunk.substr(lastIndex, m.index)));
+			if (lastIndex < m.index) push(replaceText(chunk.substring(lastIndex, m.index)));
 			if (null != token) push(token);
 			lastIndex = m.index + m[0].length;
 		}
@@ -24,9 +24,9 @@ const markdown = (str, integrate=o=>o) => { // parser + compiler
 	const RX_CHUNKS = /(?:^~~~(\w{1,99})?(?:\r\n|\n|$)([\s\S]{1,9999}?)(?:\r\n|\n|$)~~~(?:\r\n|\n|$)|((?:.{1,9999}(?:\r\n|\n|$)){1,99}))/gm;
 	// block elements (header, list item, otherwise p)
 	const RX_BLOCK_ELEMENTS = /(?:^(#{1,6})[ \t]{0,99}(.{1,999})(?:\r\n|\n|$)|^([ ]{0,99})([-*]|\d{1,3}\.)[ \t]{1,99}((?:.{1,9999}(?:\r\n|\n|$)(?!\1[-*]|\1\d{1,3}\.)){1,9999})(?:\r\n|\n|$))/gm;
-	// inline/atomic elements (br, link)
-	const RX_INLINE_ATOMIC_ELEMENTS = /(?:(  )(?:\r\n|\n|$)|\[(.{1,999})\]\((.{1,9999})\))/gm;
-	const RX_HIERARCHAL_ELEMENTS = /(?:(␠)|(␁)|(•{1,999})|(✎)|([¶⏎⇒]{1,999}))/g;
+	// inline/atomic elements (br, link, em)
+	const RX_INLINE_ATOMIC_ELEMENTS = /(?:(  )(?:\r\n|\n|$)|\[(.{1,999})\]\((.{1,9999})\)|([*_~]{1,2})(.{1,999}?)\4)/gm;
+	const RX_HIERARCHAL_ELEMENTS = /(?:(␠)|(␁)|(•{1,999})|(✎)|([¶⏎⇒/]{1,999}))/g;
 
 	// 3-pass tokenizer
 	const chunks = chunker([str], RX_CHUNKS, (i,l,[,lang,code,chunk])=> // pass 1
@@ -39,9 +39,10 @@ const markdown = (str, integrate=o=>o) => { // parser + compiler
 			listItem: listItem.replace(new RegExp('^'+listIndent,'gm'), ''),
 			listStyle: listStyle } :
 		NA, t=>t);
-	chunker(chunks, RX_INLINE_ATOMIC_ELEMENTS, (i,l,[,br,anchor,href]) => // pass 3
+	chunker(chunks, RX_INLINE_ATOMIC_ELEMENTS, (i,l,[,br,anchor,href,emType,emText]) => // pass 3
 		is(br) ? { ϵ: '⏎', br: true } :
 		is(anchor) ? { ϵ: '⇒', anchor: anchor, href: href } :
+		is(emText) ? { ϵ: '/', em: emType, text: emText } :
 		NA, t=>({ ϵ: '¶', text: t }));
 	// lexer + compiler (to JXML)
 	return chunker([chunks.map(c=>c.ϵ).join('')], RX_HIERARCHAL_ELEMENTS, (i,l,[,space,heading,list,code,p]) =>
@@ -50,11 +51,16 @@ const markdown = (str, integrate=o=>o) => { // parser + compiler
 		is(list) ? { [/[*-]/.test(chunks[i].listStyle) ? 'ul' : 'ol']:
 			chunks.slice(i,i+l).map(item=>({ li: markdown(item.listItem) })) } :
 		is(code) ? integrate({ pre: { code: { $class: chunks[i].lang, _: chunks[i].code }}}) :
-		is(p) ? { p: chunks.slice(i,i+l).map(atom=>
+		is(p) ? integrate({ p: chunks.slice(i,i+l).map(atom=>
+			atom.em ? { [
+				/^[*_]$/.test(atom.em) ? 'strong' : // bold
+				'~' === atom.em ? 'code' : // monospace
+				'~~' === atom.em ? 's' : // strikethrough
+				'em']: atom.text } : // italics
 			atom.text ? atom.text :
 			atom.br ? { br: {} } :
 			atom.anchor ? integrate({ a: { $href: atom.href, _: atom.anchor }}) :
-			NA) } :
+			NA) }) :
 		NA, t=>'');
 };
 export default markdown;

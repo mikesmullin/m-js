@@ -14,6 +14,10 @@ const _integrate_md = vnode => {
 			_: Utils.get(null, vnode, 'pre', 'code', '_'),
 		};
 	}
+	else if ('CAUTION' === Utils.get(null, vnode, 'p', 0, 'strong')) {
+		vnode.p.$class = 'warning';
+		return vnode;
+	}
 	else return vnode;
 };
 
@@ -40,7 +44,7 @@ Components.Link = {
 			'a.link': {
 				$target: v.attrs.target,
 				$href: v.attrs.href,
-				$onclick: /^http/.test(v.attrs.href) ? undefined : Route.link,
+				$onclick: Route.link,
 				_: v.children,
 			}
 		}};
@@ -269,7 +273,7 @@ doc('/api/m/root', 'm.root() | API', `
 			
 Holds the root component later used by [m.redraw()](/api/m/redraw).
 
-~~~
+~~~js
 m.root = { p: 'Hello world!' };
 ~~~
 `);
@@ -282,7 +286,7 @@ doc('/api/m/redraw', 'm.redraw() | API', `
 Applies shortest-path transforms for DOM to match state of Virtual DOM,
 beginning at the component specified by [m.root](/api/m/root).
 
-~~~
+~~~js
 m.redraw();
 ~~~
 `);
@@ -327,7 +331,21 @@ doc('/api/db/state', 'db.state() | API', `
 
 ## Description
 
-Proxy for global state. Redux calls this the root reducer.
+Controlled global state, optionally used by and shared between components.
+
+Analogous in spirit to the
+[root reducer](https://redux.js.org/recipes/structuring-reducers/splitting-reducer-logic)
+from Redux; the biggest difference being an ordinary top-level
+[Object](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object)
+holding your application's entire scope is now conveniently exposed. Use it with the
+[Reducer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/Reduce)
+pattern, or manipulate it how you like.
+
+Components should use ~db.state~ if they wish to:
+1. Persist state beyond the Virtual DOM lifecycle, or;
+2. Share state with other components in a publish-subscribe model.
+
+*CAUTION*: The keys you assign must be properly namespaced to avoid collision with other components.
 
 ~~~js
 Components.RememberedInput = {
@@ -354,6 +372,171 @@ Components.RememberedInput = {
 };
 ~~~
 `);
+
+doc('/api/db/saveState', 'db.saveState() | API', `
+# db.saveState()
+
+## Description
+
+Serialize snapshot of current in-memory [db.state](/api/db/state) to
+[localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage) for persistence.
+
+~~~js
+db.state.hello = 'world';
+db.saveState(); // above data is now retained by browser between sessions
+~~~
+`);
+
+doc('/api/db/reloadState', 'db.reloadState() | API', `
+# db.reloadState()
+
+## Description
+
+Fetch and deserialize snapshot of prior [db.state](/api/db/state) into memory from
+[localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage).
+
+~~~js
+db.reloadState(); // below data was created during a prior browser session
+console.log(db.state.hello); // 'world'
+~~~
+`);
+
+doc('/api/db/defaults', 'db.defaults | API', `
+# db.defaults
+
+## Description
+
+The object merged into [db.state](/api/db/state) by
+[db.applyDefaults()](/api/db/applyDefaults).
+
+Expects you to invoke if/when you want to use, typically from
+[document.onready](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
+
+~~~js
+Utils.onReady(()=> {
+	db.defaults.hello = 'Waldo';
+	db.applyDefaults();
+	console.log('Waldo' === db.state.hello); // true
+	// remains true until, some time later...
+	db.state.hello = 'world'; // set state, or
+	db.reloadState(); // load from persistent storage
+	// assuming nothing changes it again, some time later...
+	console.log('world' === db.state.hello); // true
+});
+~~~
+`);
+
+doc('/api/db/applyDefaults', 'db.applyDefaults | API', `
+# db.applyDefaults
+
+## Description
+
+See [db.defaults](/api/db/defaults) for details and example usage.
+`);
+
+doc('/api/db/resetState', 'db.resetState | API', `
+# db.resetState
+
+## Description
+
+The object merged into [db.state](/api/db/state) by
+[db.applyDefaults()](/api/db/applyDefaults).
+
+Expects you to invoke if/when you want to use, typically from
+[document.onready](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
+
+~~~js
+Utils.onReady(()=> {
+	db.defaults.hello = 'Waldo';
+	db.applyDefaults();
+	console.log('Waldo' === db.state.hello); // true
+	// remains true until, some time later...
+	db.state.hello = 'world'; // set state, or
+	db.reloadState(); // load from persistent storage
+	// assuming nothing changes it again, some time later...
+	console.log('world' === db.state.hello); // true
+});
+~~~
+`);
+
+doc('/api/db/actions', 'db.actions | API', `
+# db.actions
+
+## Description
+
+A [Proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy)
+for the collection of named ~Action~ functions, which you define,
+and which will log to [db.history](/api/db/history) whenever subsequently invoked.
+
+Use globally or within a component when:
+1. You want to capture, stream, or serialize user action events, or;
+2. You want to deserialize and replay user actions
+
+Use cases include:
+- User Behavior Analytics
+- Time-Travel Debugging
+- Demo Recording and Playback
+
+~~~js
+// on startup...
+const Components = {};
+Components.BeanInput = {
+	oninit(v) {
+		v.state.beanCount = 0;
+	},
+
+	oncreate(v) {
+		v.state.input = v.dom.querySelector('input');
+	},
+
+	// TODO: the only tricky part to be resolved
+	//   is re-appropriating valid vnode state after a possible
+	//   serialize/deserialize or browser refresh event
+
+	more: db.actions.MOAR_BEANS = qty => {
+		console.log(\`The boss wants \${qty} more legumes.\`);
+		v.state.beanCount += qty;
+	},
+
+	view: v => ({
+		h1: \`You haz \${v.state.beanCount} beans.\`,
+		'input[type=text]': { $placeholder: 'Qty' },
+		button: {
+			$onclick: e => Components.BeanInput.more(v.state.input.value),
+			_: 'MOAR!'
+		}
+	}),
+};
+
+
+// sometime later...
+db.actions.MOAR_BEANS(10);
+console.log(db.history); // [ ['MOAR_BEANS', 10] ]
+
+// sometime later...
+db.actions.MOAR_BEANS(100);
+console.log(db.history); // [ ['MOAR_BEANS', 10], ['MOAR_BEANS', 100] ]
+
+// etc.
+~~~
+`);
+
+
+
+// doc('/api/db/state', 'db.state() | API', `
+// # db.state()
+
+// ## Description
+
+// This is a template
+
+// ~~~js
+// hello world;
+// ~~~
+// `);
+
+
+
 
 const App = {
 	init() {

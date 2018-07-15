@@ -102,7 +102,6 @@ main.right {
   flex-grow: 1;
   max-width: 640px;
   line-height: 1.3em;
-/* prism theming */
 }
 main.right strong {
   font-weight: 900;
@@ -141,6 +140,7 @@ main.right pre,
 main.right :not(pre) > code {
   background: #eee;
   color: #000;
+  font-family: "Source Code Pro", monospace;
 }
 main.right :not(pre) > code {
   display: inline;
@@ -162,49 +162,75 @@ main.right pre > code {
   line-height: 1.3em;
   display: block;
   width: 100%;
-  font-size: 0.65rem;
-}
-main.right .token.comment,
-main.right .token.prolog,
-main.right .token.doctype,
-main.right .token.cdata {
-  color: #888;
-}
-main.right .token.property,
-main.right .token.tag,
-main.right .token.boolean,
-main.right .token.number,
-main.right .token.constant,
-main.right .token.symbol {
-  color: #905;
-}
-main.right .token.selector,
-main.right .token.attr-name,
-main.right .token.string,
-main.right .token.builtin {
-  color: #690;
-}
-main.right .token.atrule,
-main.right .token.attr-value,
-main.right .token.punctuation,
-main.right .token.keyword {
-  color: #1e5799;
-}
-main.right .token.regex,
-main.right .token.important {
-  color: #e90;
-}
-main.right code,
-main.right div.code {
-  font-family: "Source Code Pro", monospace;
+  font-size: 1rem;
 }
 main.right small,
 main.right .small {
   font-size: 0.8rem;
 }
+main.right ul,
+main.right ol {
+  margin: 0;
+  padding: 0;
+  line-height: 1em;
+}
+main.right ul li,
+main.right ol li {
+  line-height: 1.3em;
+  margin: 0 0 0 1rem;
+  padding: 0;
+}
+main.right ul li > p,
+main.right ol li > p {
+  margin-bottom: 0;
+}
+main.right ul li:last-child,
+main.right ol li:last-child {
+  margin-bottom: 1rem;
+}
+main.right .warning {
+  display: block;
+  background: #f9f9bb;
+  padding: 1rem;
+}
+main.right .warning,
+main.right .warning * {
+  color: #75730b;
+}
 main.right footer {
   border-top: 1px solid #bbb;
   padding-top: 1rem;
+}
+/* prism theming */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #888;
+}
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol {
+  color: #905;
+}
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.builtin {
+  color: #690;
+}
+.token.atrule,
+.token.attr-value,
+.token.punctuation,
+.token.keyword {
+  color: #1e5799;
+}
+.token.regex,
+.token.important {
+  color: #e90;
 }
 body {
   --stylesheet-loaded: true;

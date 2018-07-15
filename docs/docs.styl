@@ -22,6 +22,8 @@ body
 	margin 0
 	min-height 100vh
 	font 400 1rem/1em Yantramanav, sans-serif
+
+.left-sidebar, main.right
 	padding-bottom spacer*5
 
 .left-sidebar
@@ -190,5 +192,54 @@ main.right
 .token.atrule,.token.attr-value,.token.punctuation,.token.keyword {color:#1e5799;}
 .token.regex,.token.important {color:#e90;}
 
+body.route-404
+	background linear-gradient(to bottom right,
+		#556270 0%,
+		#556270 16.666%,
+		#4ECDC4 16.666%,
+		#4ECDC4 33.333%, 
+		#C7F464 33.333%,
+		#C7F464 50%,
+		#FF6B6B 50%,
+		#FF6B6B 66.666%,
+		#C44D58 66.666%,
+		#C44D58 83.333%,
+		#556270 83.333%,
+		#556270 100%
+		)
+	background-repeat no-repeat
+	background-size 550% 550%
+	animation technicolor_bg 120s infinite linear
+	@keyframes technicolor_bg
+		from
+			background-position 0% 0%
+		to
+			background-position 100% 100%
+	display flex
+	height 100%
+	justify-content center
+	align-items center
+	h1
+		font-size (100vw/15)
+		padding 1rem
+		line-height 1em
+		font-weight 900
+		width auto
+		animation error_fg 60s infinite linear
+		color rgba(255,255,255,1)
+		background-color rgba(255,0,0,.75)
+		@keyframes error_fg
+			0%
+				transform translate(-6vw, -6vh)
+			25%
+				transform translate(-6vw, 6vh)
+			50%
+				transform translate(6vw, 6vh)
+			75%
+				transform translate(6vw, -6vh)
+			100%
+				transform translate(-6vw, -6vh)
+
 body
 	--stylesheet-loaded true
+

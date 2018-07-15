@@ -19,6 +19,9 @@ body {
   margin: 0;
   min-height: 100vh;
   font: 400 1rem/1em Yantramanav, sans-serif;
+}
+.left-sidebar,
+main.right {
   padding-bottom: 5rem;
 }
 .left-sidebar {
@@ -236,6 +239,126 @@ main.right footer {
 .token.regex,
 .token.important {
   color: #e90;
+}
+body.route-404 {
+  background: linear-gradient(to bottom right, #556270 0%, #556270 16.666%, #4ecdc4 16.666%, #4ecdc4 33.333%, #c7f464 33.333%, #c7f464 50%, #ff6b6b 50%, #ff6b6b 66.666%, #c44d58 66.666%, #c44d58 83.333%, #556270 83.333%, #556270 100%);
+  background-repeat: no-repeat;
+  background-size: 550% 550%;
+  animation: technicolor_bg 120s infinite linear;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  align-items: center;
+}
+body.route-404 h1 {
+  font-size: 6.666666666666667vw;
+  padding: 1rem;
+  line-height: 1em;
+  font-weight: 900;
+  width: auto;
+  animation: error_fg 60s infinite linear;
+  color: #fff;
+  background-color: rgba(255,0,0,0.75);
+}
+@-moz-keyframes error_fg {
+  0% {
+    transform: translate(-6vw, -6vh);
+  }
+  25% {
+    transform: translate(-6vw, 6vh);
+  }
+  50% {
+    transform: translate(6vw, 6vh);
+  }
+  75% {
+    transform: translate(6vw, -6vh);
+  }
+  100% {
+    transform: translate(-6vw, -6vh);
+  }
+}
+@-webkit-keyframes error_fg {
+  0% {
+    transform: translate(-6vw, -6vh);
+  }
+  25% {
+    transform: translate(-6vw, 6vh);
+  }
+  50% {
+    transform: translate(6vw, 6vh);
+  }
+  75% {
+    transform: translate(6vw, -6vh);
+  }
+  100% {
+    transform: translate(-6vw, -6vh);
+  }
+}
+@-o-keyframes error_fg {
+  0% {
+    transform: translate(-6vw, -6vh);
+  }
+  25% {
+    transform: translate(-6vw, 6vh);
+  }
+  50% {
+    transform: translate(6vw, 6vh);
+  }
+  75% {
+    transform: translate(6vw, -6vh);
+  }
+  100% {
+    transform: translate(-6vw, -6vh);
+  }
+}
+@keyframes error_fg {
+  0% {
+    transform: translate(-6vw, -6vh);
+  }
+  25% {
+    transform: translate(-6vw, 6vh);
+  }
+  50% {
+    transform: translate(6vw, 6vh);
+  }
+  75% {
+    transform: translate(6vw, -6vh);
+  }
+  100% {
+    transform: translate(-6vw, -6vh);
+  }
+}
+@-moz-keyframes technicolor_bg {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 100%;
+  }
+}
+@-webkit-keyframes technicolor_bg {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 100%;
+  }
+}
+@-o-keyframes technicolor_bg {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 100%;
+  }
+}
+@keyframes technicolor_bg {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 100%;
+  }
 }
 body {
   --stylesheet-loaded: true;

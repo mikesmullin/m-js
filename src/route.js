@@ -6,25 +6,25 @@ const routes = {};
 const Route = {
 	init() {
 		const router = uri => {
-			let registration = routes['404'];
+			let route = routes['404'];
 			for (const key in routes) {
-				const route = routes[key];
+				const _route = routes[key];
 				let match;
-				if (null != (match = uri.match(route.rx))) {
+				if (null != (match = uri.match(_route.rx))) {
 					match.shift();
-					if (
-						null == route ||
-						(Utils.has(route, 'vnode', '$') &&
-						!m.Component.isComponent(route.vnode))
-					) {
-					} else {
-						registration = route;
+					if (!(
+						null == _route ||
+						(Utils.has(_route, 'vnode', '$') &&
+						!m.Component.isComponent(_route.vnode))
+					)) {
+						route = _route;
 						Route.params = match;
 					}
 				}
 			}
-			Route.title = registration.title || '';
-			m.root = registration.vnode;
+			Route.title = route.title || '';
+			document.body.setAttribute('class', Utils.hyphenate('route-'+route.uri));
+			m.root = route.vnode;
 			m.redraw();
 		};
 		Route.onnavigate(router);
@@ -34,6 +34,7 @@ const Route = {
 
 	register(uri, title, component) {
 		routes[uri] = {
+			uri: uri,
 			title: Route.formatTitle(title),
 			rx: new RegExp('^'+uri+'$'),
 			vnode: { $: component }
@@ -100,7 +101,7 @@ const Route = {
 
 Route.register('404', 'Not found', {
 	view(v) {
-		return { 'h1': `Error 404: Page not found.` };
+		return { 'h1': `Error 404 Page not found` };
 	}
 });
 

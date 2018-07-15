@@ -50,7 +50,6 @@ const Route = {
 		};
 	},
 
-
 	init() {
 		// only on first page load
 		if (!_inited) {

@@ -130,6 +130,7 @@ Pages.Layout = {
 									{ $: Components.Link, $href: '/api/route/link', _: '.link()' },
 									{ $: Components.Link, $href: '/api/route/redirect', _: '.redirect()' },
 									{ $: Components.Link, $href: '/api/route/uri', _: '.uri' },
+									{ $: Components.Link, $href: '/api/route/params', _: '.params' },
 									{ $: Components.Link, $href: '/api/route/getTitleByURI', _: '.getTitleByURI()' },
 								]
 							}},
@@ -277,6 +278,8 @@ Holds the root component later used by [m.redraw()](/api/m/redraw).
 You will only have to set this if you choose handle routing manually instead
 of using [Route.init()](/api/route/init).
 
+## Example
+
 ~~~js
 m.root = { p: 'Hello world!' };
 ~~~
@@ -322,9 +325,14 @@ m.redraw();
 doc('/api/m/instance', 'm.instance()', `
 # m.instance(component)
 
+Where
+
+- The ~component~ parameter is an ~Object~ with a defined ~view(v)~ method which
+will return a ~VNode~ when invoked by [m.redraw()](/api/m/redraw).
+
 ## Description
 
-Instantiates what would otherwise be a static component.
+Instantiates what would otherwise be a static [stateless] component.
 
 *CAUTION*: Instantiating a component is optional, and in most cases you won't need to.
 
@@ -336,11 +344,14 @@ want multiple buttons or list items on the screen but they are stateless,
 so static is fine.
 
 Of course there are definitely cases where you want each component to have
-a separate state. Still, you should consider whether global or local storage
+a separate instance state. Still, you should consider whether global or
+[localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage)
 state would be better, because component instance state gets discarded
 as soon as it is removed from the Virtual DOM tree. If you want the state
 to survive a page refresh or be serialized in a permalink, consider storing
 and referencing it outside of the component.
+
+## Example
 
 ~~~js
 // crappy example; there are better scenarios
@@ -360,6 +371,8 @@ m.render();
 doc('/api/db/state', 'db.state()', `
 # db.state()
 
+Returns an ~Object~ holding values of any type.
+
 ## Description
 
 Controlled global state, optionally used by and shared between components.
@@ -372,11 +385,16 @@ holding your application's entire scope is now conveniently exposed. Use it with
 [Reducer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/Reduce)
 pattern, or manipulate it how you like.
 
-Components should use ~db.state~ if they wish to:
+*NOTE*: Use of the db module is entirely optional. You can download a release
+without it.
+
+Components may choose to use ~db.state~ if they wish to:
 1. Persist state beyond the Virtual DOM lifecycle, or;
 2. Share state with other components in a publish-subscribe model.
 
 *CAUTION*: Care must be taken to avoid namespace collisions when components share this global scope.
+
+## Example
 
 ~~~js
 import db from 'm-js/db.js';
@@ -414,6 +432,8 @@ doc('/api/db/saveState', 'db.saveState()', `
 Serialize a snapshot of current in-memory [db.state](/api/db/state) to
 [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage) for persistence.
 
+## Example
+
 ~~~js
 db.state.hello = 'world';
 db.saveState(); // above data is now retained by browser between sessions
@@ -428,6 +448,8 @@ doc('/api/db/reloadState', 'db.reloadState()', `
 Fetch and deserialize a snapshot of prior [db.state](/api/db/state) into memory from
 [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage).
 
+## Example
+
 ~~~js
 db.reloadState(); // below data was created during a prior browser session
 console.log(db.state.hello); // 'world'
@@ -437,6 +459,8 @@ console.log(db.state.hello); // 'world'
 doc('/api/db/defaults', 'db.defaults', `
 # db.defaults
 
+Returns an ~Object~ holding default values of any type.
+
 ## Description
 
 The object merged into [db.state](/api/db/state) by
@@ -444,6 +468,8 @@ The object merged into [db.state](/api/db/state) by
 
 Expects you to invoke if/when you want to use, typically from
 [document.onready](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
+
+## Example
 
 ~~~js
 Utils.onReady(()=> {
@@ -478,6 +504,8 @@ The object merged into [db.state](/api/db/state) by
 Expects you to invoke if/when you want to use, typically from
 [document.onready](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
 
+## Example
+
 ~~~js
 Utils.onReady(()=> {
 	db.defaults.hello = 'Waldo';
@@ -495,10 +523,13 @@ Utils.onReady(()=> {
 doc('/api/db/actions', 'db.actions', `
 # db.actions
 
+Returns a
+[Proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy)
+for named ~Action~ functions.
+
 ## Description
 
-A [Proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy)
-for the collection of named ~Action~ functions, which you define,
+A collection of named ~Action~ functions, which you define,
 and which will log to [db.history](/api/db/history) whenever subsequently invoked.
 
 Use globally or within a component when:
@@ -511,6 +542,8 @@ Use cases include:
 - Demo Recording and Playback
 
 *CAUTION*: Care must be taken to avoid namespace collisions when components share this global scope.
+
+## Example
 
 ~~~js
 // on startup...
@@ -559,9 +592,13 @@ console.log(db.history); // [ ['MOAR_BEANS', 10], ['MOAR_BEANS', 100] ]
 doc('/api/db/history', 'db.history', `
 # db.history
 
+Returns a serializable ~Array~ of ~Action~ events.
+
 ## Description
 
-A serializable list of user ~Action~ events.
+An in-memory store holding a list of events.
+
+## Example
 
 ~~~js
 console.log(db.history); // e.g.
@@ -577,6 +614,8 @@ doc('/api/db/saveHistory', 'db.saveHistory()', `
 Serialize a snapshot of current in-memory [db.history](/api/db/history) to
 [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage) for persistence.
 
+## Example
+
 ~~~js
 db.saveHistory();
 ~~~
@@ -590,6 +629,8 @@ doc('/api/db/reloadHistory', 'db.reloadHistory()', `
 Fetch and deserialize a snapshot of prior [db.history](/api/db/history) into memory from
 [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage).
 
+## Example
+
 ~~~js
 db.reloadHistory();
 ~~~
@@ -601,6 +642,8 @@ doc('/api/db/replayHistory', 'db.replayHistory()', `
 ## Description
 
 Iterate [db.history](/api/db/history), invoking every ~Action~ in the list.
+
+## Example
 
 ~~~js
 db.replayHistory();
@@ -630,6 +673,8 @@ Useful for events such as a series of client-side UI navigational steps,
 when they are not already serialized into the
 [document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location).
 
+## Example
+
 ~~~js
 console.log(db.history) // [ [ 'DRINK' ], [ 'PEE' ] ]
 console.log(db.state.bladder); // 'empty'
@@ -648,6 +693,8 @@ Empty all ~Action~ events from the [db.history](/api/db/history) list.
 
 Same as reloading the page without calling [db.reloadHistory()](/api/db/reloadHistory).
 
+## Example
+
 ~~~js
 console.log(db.history) // [ [ 'DO_SOMETHING' ] ]
 db.resetHistory();
@@ -657,6 +704,15 @@ console.log(db.history) // []
 
 doc('/api/hot/reloader', 'Hot.reloader()', `
 # Hot.reloader(app)
+
+Where
+
+- The ~app~ parameter is an ~Object~ holding an ~init()~ method, which is re-entrant
+and will successfully bootstrap or re-bootstrap your application any time
+its ~.js~ file is loaded or re-loaded.
+
+Returns a ~Function~ which will merge the new ~app~ methods over the existing
+running ~app~ instance, and reset [db.state](/api/db/state).
 
 ## Description
 
@@ -682,6 +738,9 @@ Hot reloading helps in a few *simple*, but *hugely impactful*, ways:
 
 Analogous to [Hot Module Replacement (HMR)](https://webpack.js.org/concepts/hot-module-replacement/) by Webpack.
 
+*NOTE*: Use of the hot module is entirely optional. You can download a release
+without it.
+
 ## Example Instrumentation
 
 ~~~js
@@ -696,13 +755,6 @@ const App = {
 import HotClient from 'm-js/hot-client.js';
 Utils.onReady(HotClient.reloader(App));
 ~~~
-
-The ~app~ argument should be an ~Object~ containing an ~init()~ method which is re-entrant
-and will successfully bootstrap or re-bootstrap your application any time
-its ~.js~ file is loaded or re-loaded.
-
-Returns a ~Function~ which will merge the new ~app~ methods over the existing
-running ~app~ instance, and reset [db.state](/api/db/state).
 
 ~~~js
 // server-side
@@ -730,12 +782,14 @@ example provided, as needed.
 doc('/api/route/titleFormat', 'Route.titleFormat', `
 # Route.titleFormat
 
-Holds a ~Function~ of signature ~(uri:string, title:string) => title:string~
+Returns a ~Function~ of signature ~(uri:string, title:string) => title:string~
 which uses its input to inform what the current page's title should be.
 
-The ~uri~ parameter is the result of [Route.uri](/api/route/uri).
+Where
 
-The ~title~ parameter is the ~String~ passed with the component when
+- The ~uri~ parameter is the result of [Route.uri](/api/route/uri).
+
+- The ~title~ parameter is the ~String~ passed with the component when
 [Route.register()](/api/route/register) was called.
 
 ## Description
@@ -745,7 +799,8 @@ Determines what the current page title should be.
 The default value is an identity function ~(_,title)=>title~ which simply sets the title
 to exactly what was given when [Route.register()](/api/route/register) was called.
 
-If you want to change how title strings are formatted, you are expected to overwrite this function.
+If you want to change how title strings are formatted, you are expected to
+overwrite this function at runtime.
 
 ## Example
 
@@ -760,10 +815,12 @@ Route.titleFormat = (uri,s) => s + (
 doc('/api/route/rewrite', 'Route.rewrite()', `
 # Route.rewrite(from,to)
 
-The ~from~ parameter is a ~String~ that should match the expected result of
+Where
+
+- The ~from~ parameter is a ~String~ that should match the expected result of
 [Route.uri](/api/route/uri).
 
-The ~to~ parameter is a ~String~ that will be passed to
+- The ~to~ parameter is a ~String~ that will be passed to
 [Route.redirect()](/api/route/redirect).
 
 ## Description
@@ -784,14 +841,20 @@ Route.init();
 doc('/api/route/register', 'Route.register()', `
 # Route.register(uri, title, component)
 
-The ~uri~ parameter is a RegExp ~String~ pattern. 
+Where
 
-The ~title~ parameter is a ~String~ which will be used by
+- The ~uri~ parameter is a 
+[RegExp](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp)
+~String~ pattern, implicitly enclosed within ~^~ and ~$~.
+You can include capturing groups if you wish, and any values captured will be 
+available from ~Route.params~ for your component to interact with.
+
+- The ~title~ parameter is a ~String~ which will be used by
 [Route.titleFormat()](/api/route/titleFormat)
 to compose the final
 [document.title](https://developer.mozilla.org/en-US/docs/Web/API/Document/title).
 
-The ~component~ parameter is an ~Object~ with a defined ~view(v)~ method which
+- The ~component~ parameter is an ~Object~ with a defined ~view(v)~ method which
 will return a ~VNode~ when invoked by [m.redraw()](/api/m/redraw).
 
 ## Description
@@ -815,11 +878,18 @@ to the result of
 ## Example
 
 ~~~js
+const Pages = {};
+Pages.Api = {
+	view(v) {
+		return { p: { 'Hello world!' }};
+	},
+};
 Route.register('/api', 'API', Pages.Api);
 Route.init();
 ~~~
 
-*NOTE*: Use of the Route module is entirely optional.
+*NOTE*: Use of the Route module is entirely optional. You can download a release
+without it.
 
 Should you choose to use it, here are its few opinionated restrictions:
 
@@ -830,7 +900,7 @@ Should you choose to use it, here are its few opinionated restrictions:
   override the former.
 
 When no routes are defined, or no routes are matched, a default route is
-provided under the URI ~404~ which will display a *404 Not Found* error. You
+provided under the URI ~404~ which will display a *[404 Not Found](/404)* error. You
 can override this registration, but you don't have to.
 
 ## Example
@@ -841,14 +911,110 @@ Route.register('404', 'Not found', {
 ~~~
 `);
 
+doc('/api/route/uri', 'Route.uri', `
+# Route.uri
+
+Returns a ~String~ URI value.
+
+## Description
+
+Parses the the current
+[document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location),
+1. discarding any
+	[query string](https://developer.mozilla.org/en-US/docs/Web/API/HTMLHyperlinkElementUtils/search)
+	values, and;
+2. normalizing URI schemes including,  
+	clean (~/user/1~) vs.  
+	hashed (~/#/user/1~), and;
+3. returning a simplified result.
+
+## Example
+
+~~~js
+document.location.href = '/#/user/1?pine=cone';
+console.log(Route.uri); // "/user/1"
+~~~
+`);
+
+doc('/api/route/params', 'Route.params', `
+# Route.params
+
+Returns an ~Array~ of ~String~ captured group values.
+
+## Description
+
+Holds any group values captured by the router's call to
+[String.prototype.match](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/match)
+using the
+[RegExp](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp)
+pattern from the ~uri~ of
+[Route.register()](/api/route/register)
+during the last 
+[window.onhashchange](https://developer.mozilla.org/en-US/docs/Web/Events/hashchange)
+event.
+
+## Example
+
+~~~js
+Route.register('/user/(\\d+)', 'User Profile', {
+	view(v) {
+		const [id] = Route.params;
+		const user = db.state.Users.find(u=>id===u.id);
+		return { h1: { \`Profile of \${user.name}!\` }};
+	}
+});
+~~~
+`);
+
+doc('/api/route/getTitleByURI', 'Route.getTitleByURI()', `
+# Route.getTitleByURI(uri)
+
+Where
+- The ~uri~ parameter is a ~String~ literal matching the pattern given to the ~uri~ in a prior
+call to [Route.register()](/api/route/register).
+
+Returns a ~String~ title value.
+
+## Description
+
+A kind of reverse-lookup function which will find the title previously 
+registered to a given URI.
+
+Useful for hyperlink components to automatically determine the anchor
+text for an in-app href.
+
+## Example
+
+~~~js
+const Components = {};
+Components.Link = {
+	view(v) {
+		return {
+			'a': {
+				$class: Route.uri === v.attrs.href ?
+					Utils.joinStringIfNotEmpty(v.attrs.class, ' ',  'active') :
+					v.attrs.class,
+				$href: v.attrs.href,
+				$title: Route.getTitleByURI(v.attrs.href),
+				$onclick: Route.link,
+				_: v.children,
+			}
+		};
+	}
+};
+~~~
+`);
+
 doc('/api/utils/request', 'Utils.request()', `
 # Utils.request(method, url, data)
 
-Parameter ~method~ is a ~String~ with value one of ~GET~, ~POST~, ~PUT~, ~DELETE~, etc.
+Where
 
-Parameter ~url~ is a ~String~ with value of any valid URL.
+- The ~method~ parameter is a ~String~ value being one of ~GET~, ~POST~, ~PUT~, ~DELETE~, etc.
 
-Parameter ~data~ is an optional ~Object~ with value containing any valid JSON.
+- The ~url~ parameter is a ~String~ with value of any valid URL.
+
+- The ~data~ parameter is an optional ~Object~ with value containing any valid JSON.
 
 Returns a
 [Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise).
@@ -870,6 +1036,9 @@ object.
 
 Always sends ~Content-Type: application/json~ request header, with any HTTP body
 data in JSON, and expects the server to respond with the same.
+
+*NOTE*: Use of the Utils module is partially optional. You can download a release
+with only the specific methods used by m-js, which does not include this one.
 
 After the HTTP request is complete and the Promise resolves, and
 presumably some application state has changed as a result—then you may want to 

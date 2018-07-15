@@ -187,6 +187,12 @@ main.right ol li {
   margin: 0 0 0 1rem;
   padding: 0;
 }
+main.right ul li,
+main.right ol li,
+main.right ul li p,
+main.right ol li p {
+  text-align: left;
+}
 main.right ul li > p,
 main.right ol li > p {
   margin-bottom: 0;

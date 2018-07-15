@@ -48,7 +48,7 @@ const Route = {
 		const anchor = e.currentTarget || e.target;
 		if (null == anchor) return;
 		const href = anchor.getAttribute('href');
-		if (/^(\w{1,99}:)?\/\//.test(href)) return; // redirect browser
+		if (/^(?:\w{1,99}:)?\/\//.test(href)) return; // redirect browser
 		else {
 			e.preventDefault();
 			e.stopPropagation();

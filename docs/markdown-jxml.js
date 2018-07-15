@@ -25,7 +25,7 @@ const markdown = (str, integrate=o=>o) => { // parser + compiler
 	// block elements (header, list item, otherwise p)
 	const RX_BLOCK_ELEMENTS = /(?:^(#{1,6})[ \t]{0,99}(.{1,999})(?:\r\n|\n|$)|^([ ]{0,99})([-*]|\d{1,3}\.)[ \t]{1,99}((?:.{1,9999}(?:\r\n|\n|$)(?!\1[-*]|\1\d{1,3}\.)){1,9999})(?:\r\n|\n|$))/gm;
 	// inline/atomic elements (br, link, em)
-	const RX_INLINE_ATOMIC_ELEMENTS = /(?:(  )(?:\r\n|\n|$)|\[(.{1,999})\]\((.{1,9999})\)|([*_~]{1,2})(.{1,999}?)\4)/gm;
+	const RX_INLINE_ATOMIC_ELEMENTS = /(?:(  )(?:\r\n|\n|$)|\[(.{1,999}?)\]\(((?:\w{1,99}:)?\/?\/?[-A-Za-z0-9+&@#/%?=~_()|!:,.;]{0,2083}[-A-Za-z0-9+&@#/%=~_()|])\)|([*_~]{1,2})(.{1,999}?)\4)/gm;
 	const RX_HIERARCHAL_ELEMENTS = /(?:(␠)|(␁)|(•{1,999})|(✎)|([¶⏎⇒/]{1,999}))/g;
 
 	// 3-pass tokenizer

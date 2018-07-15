@@ -17,8 +17,9 @@ body {
   color: #000;
   display: flex;
   margin: 0;
-  height: 100vh;
+  min-height: 100vh;
   font: 400 1rem/1em Yantramanav, sans-serif;
+  padding-bottom: 5rem;
 }
 .left-sidebar {
   padding: 1rem;
@@ -170,7 +171,7 @@ main.right .small {
 }
 main.right ul,
 main.right ol {
-  margin: 0;
+  margin: 0 0 0 1rem;
   padding: 0;
   line-height: 1em;
 }
@@ -187,6 +188,10 @@ main.right ol li > p {
 main.right ul li:last-child,
 main.right ol li:last-child {
   margin-bottom: 1rem;
+}
+main.right ul li ul,
+main.right ol li ul {
+  margin: 0;
 }
 main.right .warning {
   display: block;

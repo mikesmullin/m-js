@@ -12,16 +12,17 @@ h1,h2,h3,h4,h5,h6
 	line-height 1rem
 	font-weight 400
 
+spacer = 1rem
+color-blue = rgba(44,77,144,1)
+
 body
 	background #fff
 	color #000
 	display flex
 	margin 0
-	height 100vh
+	min-height 100vh
 	font 400 1rem/1em Yantramanav, sans-serif
-
-spacer = 1rem
-color-blue = rgba(44,77,144,1)
+	padding-bottom spacer*5
 
 .left-sidebar
 	padding spacer
@@ -156,7 +157,7 @@ main.right
 		font-size .8rem
 
 	ul, ol
-		margin 0
+		margin 0 0 0 spacer
 		padding 0
 		line-height 1em
 		li
@@ -167,6 +168,8 @@ main.right
 				margin-bottom 0
 			&:last-child
 				margin-bottom 1rem
+			ul
+				margin 0
 
 	.warning
 		display block

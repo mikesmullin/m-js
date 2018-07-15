@@ -345,7 +345,7 @@ Components should use ~db.state~ if they wish to:
 1. Persist state beyond the Virtual DOM lifecycle, or;
 2. Share state with other components in a publish-subscribe model.
 
-*CAUTION*: The keys you assign must be properly namespaced to avoid collision with other components.
+*CAUTION*: Care must be taken to avoid namespace collisions when components share this global scope.
 
 ~~~js
 Components.RememberedInput = {
@@ -378,7 +378,7 @@ doc('/api/db/saveState', 'db.saveState() | API', `
 
 ## Description
 
-Serialize snapshot of current in-memory [db.state](/api/db/state) to
+Serialize a snapshot of current in-memory [db.state](/api/db/state) to
 [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage) for persistence.
 
 ~~~js
@@ -392,7 +392,7 @@ doc('/api/db/reloadState', 'db.reloadState() | API', `
 
 ## Description
 
-Fetch and deserialize snapshot of prior [db.state](/api/db/state) into memory from
+Fetch and deserialize a snapshot of prior [db.state](/api/db/state) into memory from
 [localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage).
 
 ~~~js
@@ -426,16 +426,16 @@ Utils.onReady(()=> {
 ~~~
 `);
 
-doc('/api/db/applyDefaults', 'db.applyDefaults | API', `
-# db.applyDefaults
+doc('/api/db/applyDefaults', 'db.applyDefaults() | API', `
+# db.applyDefaults()
 
 ## Description
 
 See [db.defaults](/api/db/defaults) for details and example usage.
 `);
 
-doc('/api/db/resetState', 'db.resetState | API', `
-# db.resetState
+doc('/api/db/resetState', 'db.resetState() | API', `
+# db.resetState()
 
 ## Description
 
@@ -476,6 +476,8 @@ Use cases include:
 - User Behavior Analytics
 - Time-Travel Debugging
 - Demo Recording and Playback
+
+*CAUTION*: Care must be taken to avoid namespace collisions when components share this global scope.
 
 ~~~js
 // on startup...
@@ -518,6 +520,105 @@ db.actions.MOAR_BEANS(100);
 console.log(db.history); // [ ['MOAR_BEANS', 10], ['MOAR_BEANS', 100] ]
 
 // etc.
+~~~
+`);
+
+doc('/api/db/history', 'db.history | API', `
+# db.history
+
+## Description
+
+A serializable list of user ~Action~ events.
+
+~~~js
+console.log(db.history); // e.g.
+// [[ 'WEST', 3 ], [ 'SOUTH', 2 ], /*...*/ [ 'DIG', 10 ]]
+~~~
+`);
+
+doc('/api/db/saveHistory', 'db.saveHistory() | API', `
+# db.saveHistory()
+
+## Description
+
+Serialize a snapshot of current in-memory [db.history](/api/db/history) to
+[localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage) for persistence.
+
+~~~js
+db.saveHistory();
+~~~
+`);
+
+doc('/api/db/reloadHistory', 'db.reloadHistory() | API', `
+# db.reloadHistory()
+
+## Description
+
+Fetch and deserialize a snapshot of prior [db.history](/api/db/history) into memory from
+[localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Storage/LocalStorage).
+
+~~~js
+db.reloadHistory();
+~~~
+`);
+
+doc('/api/db/replayHistory', 'db.replayHistory() | API', `
+# db.replayHistory()
+
+## Description
+
+Iterate [db.history](/api/db/history), invoking every ~Action~ in the list.
+
+~~~js
+db.replayHistory();
+~~~
+`);
+
+doc('/api/db/undoHistory', 'db.undoHistory() | API', `
+# db.undoHistory()
+
+## Description
+
+Remove the last ~Action~ event from [db.history](/api/db/history),
+then [db.resetState()](/api/db/resetState) and [db.replayHistory()](/api/db/replayHistory).
+
+This only has the effect of undoing the last ~Action~ when:
+1. Your application is written
+[deterministically](https://en.wikipedia.org/wiki/Deterministic_algorithm), and;
+2. The [db.history](/api/db/history) queue contains only
+[re-entrant](https://en.wikipedia.org/wiki/Reentrancy_(computing))
+~Action~ events.
+
+For example, an ~Action~ performing an HTTP POST may not be something you
+can safely repeat because it may be represent an irrevocable change,
+and therefore it is not a re-entrant function.
+
+Useful for events such as a series of client-side UI navigational steps,
+when they are not already serialized into the
+[document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location).
+
+~~~js
+console.log(db.history) // [ [ 'DRINK' ], [ 'PEE' ] ]
+console.log(db.state.bladder); // 'empty'
+db.undoHistory();
+console.log(db.history) // [ [ 'DRINK' ] ]
+console.log(db.state.bladder); // 'full'
+~~~
+`);
+
+doc('/api/db/resetHistory', 'db.resetHistory() | API', `
+# db.resetHistory()
+
+## Description
+
+Empty all ~Action~ events from the [db.history](/api/db/history) list.
+
+Same as reloading the page without calling [db.reloadHistory()](/api/db/reloadHistory).
+
+~~~js
+console.log(db.history) // [ [ 'DO_SOMETHING' ] ]
+db.resetHistory();
+console.log(db.history) // []
 ~~~
 `);
 

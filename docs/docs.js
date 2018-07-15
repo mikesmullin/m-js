@@ -273,6 +273,9 @@ doc('/api/m/root', 'm.root() | API', `
 			
 Holds the root component later used by [m.redraw()](/api/m/redraw).
 
+You will only have to set this if you choose handle routing manually instead
+of using [Route.init()](/api/route/init).
+
 ~~~js
 m.root = { p: 'Hello world!' };
 ~~~
@@ -298,6 +301,8 @@ doc('/api/m/instance', 'm.instance() | API', `
 
 Instantiates what would otherwise be a static component.
 
+*CAUTION*: Instantiating a component is optional, and in most cases you won't need to.
+
 All components
 are effectively static singletons until they are wrapped by this function.
 In many cases such as pages or layouts you will never have more than a single
@@ -313,7 +318,8 @@ to survive a page refresh or be serialized in a permalink, consider storing
 and referencing it outside of the component.
 
 ~~~js
-// crappy example; will do better later
+// crappy example; there are better scenarios
+// but they require more detail and explanation.
 const Components = {};
 Components.Button = {
 	view: () => ({ button: v.attrs.label }) };
@@ -657,6 +663,8 @@ Analogous to [Hot Module Replacement (HMR)](https://webpack.js.org/concepts/hot-
 // client-side
 const App = {
 	init() {
+		App.id = Utils.uid();
+		console.debug(\`Initializing App \${App.id}\`);
 		// ...
 	}	
 };
@@ -673,7 +681,6 @@ running ~app~ instance, and reset [db.state](/api/db/state).
 
 ~~~js
 // server-side
-
 const app = require('express')();
 const server = require('m-js/hot-server')({
 	app: app,
@@ -695,15 +702,96 @@ if you need a more robust implementation you can simply copy and improve the
 example provided, as needed.
 `);
 
+doc('/api/route/init', 'Route.init() | API', `
+# Route.init()
+
+## Description
+
+This is a template.
+
+~~~js
+var workInProgress = true;
+~~~
+`);
+
+doc('/api/utils/request', 'Utils.request() | API', `
+# Utils.request(method, url, data)
+
+Parameter ~method~ is a ~String~ with value one of ~GET~, ~POST~, ~PUT~, ~DELETE~, etc.
+
+Parameter ~url~ is a ~String~ with value of any valid URL.
+
+Parameter ~data~ is an optional ~Object~ with value containing any valid JSON.
+
+Returns a
+[Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise).
+Will
+[.resolve()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/resolve)
+if HTTP response is ~Status: 200~, otherwise
+[.reject()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/reject).
+In either case, the value passed to 
+[.then()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/then)
+will be the
+[JSON.parse()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse)
+of ~xhr.responseText~.
+
+## Description
+
+Performs a backgrounded HTTP(S) request using an
+[XMLHttpRequest (XHR)](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest)
+object.
+
+Always sends ~Content-Type: application/json~ request header, with any HTTP body
+data in JSON, and expects the server to respond with the same.
+
+Does NOT automatically call [m.redraw()](/api/m/redraw) for you. You must do that,
+if you want it to happen. (**ie. After the HTTP request is complete and the Promise
+resolves, and presumably some application state has changed as a result—then you
+may want to update the view.**)
+
+## Example
+
+~~~js
+Pages.Ideas.New = {
+	async onsubmit(v,e) {
+		const form = e.currentTarget;
+		const data = Utils.serializeForm(form);
+		console.log('Pages.Ideas.New.onsubmit()', data);
+		const resp = await Utils.request('post', Utils.prop(form, null, 'action'), data);
+		console.log('resp', resp);
+		Route.redirect('/ideas/explore');
+	},
+
+	view(v) {
+		return { $: Pages.Layout, _: {
+			'.scroll.container-fluid': {
+				'.row': {
+					'.col.p-4': {
+						'h1.text-bold.text-3x': 'New Idea',
+						form: {
+							$method: 'post', $action: '/api/1/crud/Idea',
+							$onsubmit: Utils.trapEvent(Pages.Ideas.New.onsubmit.bind(null, v)), _:[
+							{ $: Components.TextInput, $name: 'summary', $label: 'Summary', $help: '140 chars max' },
+							{ $: Components.TextArea, $name: 'detail', $label: 'Detail', $help: 'Put everything here. Assume readers will look nowhere else.', $rows: 6 },
+							{ $: Components.TextInput, $name: 'tags', $label: 'Tags', $help: 'comma-delimited list' },
+							{ $: Components.SubmitButtonInput, $label: 'Submit' },
+						]}
+				}}}
+		}};
+	}
+};
+~~~
+`);
+
 // doc('/api/db/state', 'db.state() | API', `
 // # db.state()
-
+//
 // ## Description
-
-// This is a template
-
+//
+// This is a template.
+//
 // ~~~js
-// hello world;
+// var workInProgress = true;
 // ~~~
 // `);
 

@@ -168,6 +168,7 @@ main.right pre > code {
   line-height: 1.3em;
   display: block;
   width: 100%;
+  overflow-x: auto;
   font-size: 1rem;
 }
 main.right small,

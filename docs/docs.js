@@ -14,7 +14,7 @@ const _integrate_md = vnode => {
 			_: Utils.get(null, vnode, 'pre', 'code', '_'),
 		};
 	}
-	if ('CAUTION' === Utils.get(null, vnode, 'p', 0, 'strong')) {
+	if (['CAUTION','WARNING','NOTE'].includes(Utils.get(null, vnode, 'p', 0, 'strong'))) {
 		vnode.p.$class = 'warning';
 		return vnode;
 	}
@@ -77,6 +77,9 @@ Pages.Layout = {
 											{ li: { 'a.link': 'Tutorial' } },
 											{ li: { 'a.link': 'Learning Resources' } },
 											{ li: { 'a.link': 'Getting Help' } },
+										]}},
+										{ 'li': { 'a.link': 'Components', ul: [
+											{ li: { 'a.link': 'Lifecycle methods' } },
 										]}},
 									]
 								}
@@ -179,7 +182,7 @@ Pages.Guide = {
 				`but you have to follow a set of guidelines, and sometimes install dependencies—both of which are the framework.` },
 
 			{ p: [
-				{ strong: 'WARNING: ' }, `Our mobile support is limited to the mobile browser only. We don't compile native. `+
+				{ strong: 'WARNING' }, `: Our mobile support is limited to the mobile browser only. We don't compile native. `+
 				`You could still bundle and ship with `,
 				{ a: { $href: 'https://electronjs.org/', _: 'Electron' }},
 				` or `,
@@ -194,7 +197,7 @@ Pages.Guide = {
 				`which then finally applies the shortest-path transformations to the DOM tree.` },
 			
 			{ p: [
-				{ strong: 'NOTE: ' }, `The DOM is a form of `, 
+				{ strong: 'NOTE' }, `: The DOM is a form of `, 
 				{ a: { $href: 'https://en.wikipedia.org/wiki/Directed_acyclic_graph', _: 'directed acyclic graph' }},
 				`, and therefore `,
 				{ a: { $href: 'https://en.wikipedia.org/wiki/Graph_theory', _: 'Graph Theory' }},
@@ -288,6 +291,30 @@ doc('/api/m/redraw', 'm.redraw() | API', `
 
 Applies shortest-path transforms for DOM to match state of Virtual DOM,
 beginning at the component specified by [m.root](/api/m/root).
+
+In a normal application, this method will be invoked a lot.
+
+*NOTE*: The library will never call this function; we expect you to do it. We
+believe this is less confusing for beginners, as it promotes both efficiency
+and control.
+
+If you wanted, you could call it a lot—even from inside a
+[requestAnimationFrame()](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame)
+loop (ie. for WebGL animation) because by itself, it is a highly scalable function.
+Still, you should be cognizant of the factors that affect its performance, which include:
+- *Number of nodes present in both the DOM and the Virtual DOM.*  
+	If you are trying to render 1 million nodes, you'll need a good strategy to
+	ensure you only need to apply a handful of changes per frame. Still some browsers
+	and devices will choke on a large number of nodes even if they are not changing
+	per frame.
+- *Whether any ~Component.view()~ is performing expensive computation.*  
+	__This is never true in the correctly written application.__
+	It is considered bad practice to compute from the ~.view()~ method. That 
+	should instead be happening in one of the other component lifecycle methods,
+	and the ~.view(v)~ function itself should just be rendering pre-computed
+	~v.state~ and ~v.attrs~.
+
+## Example
 
 ~~~js
 m.redraw();
@@ -737,17 +764,18 @@ of ~xhr.responseText~.
 
 ## Description
 
-Performs a backgrounded HTTP(S) request using an
+Performs an asynchronous HTTP(S) request using an
 [XMLHttpRequest (XHR)](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest)
 object.
 
 Always sends ~Content-Type: application/json~ request header, with any HTTP body
 data in JSON, and expects the server to respond with the same.
 
-Does NOT automatically call [m.redraw()](/api/m/redraw) for you. You must do that,
-if you want it to happen. (**ie. After the HTTP request is complete and the Promise
-resolves, and presumably some application state has changed as a result—then you
-may want to update the view.**)
+After the HTTP request is complete and the Promise resolves, and
+presumably some application state has changed as a result—then you may want to 
+update the view.
+
+*NOTE*: This method will *not* trigger a redraw for you. Read more about [m.redraw()](/api/m/redraw) for details.  
 
 ## Example
 

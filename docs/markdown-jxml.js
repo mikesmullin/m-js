@@ -18,8 +18,8 @@ const chunker = (chunks, rx, cb, replaceText=t=>null) => { // tokenizer + lexer 
 	// console.log('chunks', chunks);
 	return chunks;
 };
-const is = v => null != v, NA = undefined;
-const markdown = (str, integrate=o=>o) => { // parser + compiler
+const is = v => null != v, NA = undefined, wrap = (cond,k,o) => cond ? { [k]: o } : o;
+const markdown = (str, integrate=o=>o, inlineOnly=false) => { // parser + compiler
 	// chunks (becomes p tag if any leftover text)
 	const RX_CHUNKS = /(?:^~~~(\w{1,99})?(?:\r\n|\n|$)([\s\S]{1,9999}?)(?:\r\n|\n|$)~~~(?:\r\n|\n|$)|((?:.{1,9999}(?:\r\n|\n|$)){1,99}))/gm;
 	// block elements (header, list item, otherwise p)
@@ -27,7 +27,6 @@ const markdown = (str, integrate=o=>o) => { // parser + compiler
 	// inline/atomic elements (br, link, em)
 	const RX_INLINE_ATOMIC_ELEMENTS = /(?:(  )(?:\r\n|\n|$)|\[(.{1,999}?)\]\(((?:\w{1,99}:)?\/?\/?[-A-Za-z0-9+&@#/%?=~_()|!:,.;]{0,2083}[-A-Za-z0-9+&@#/%=~_()|])\)|([*_~]{1,2})([\s\S]{1,999}?)\4)/gm;
 	const RX_HIERARCHAL_ELEMENTS = /(?:(␠)|(␁)|(•{1,999})|(✎)|([¶⏎⇒/]{1,999}))/g;
-
 	// 3-pass tokenizer
 	const chunks = chunker([str], RX_CHUNKS, (i,l,[,lang,code,chunk])=> // pass 1
 		is(code) ? { ϵ: '✎', code: code, lang: lang } :
@@ -42,27 +41,31 @@ const markdown = (str, integrate=o=>o) => { // parser + compiler
 	chunker(chunks, RX_INLINE_ATOMIC_ELEMENTS, (i,l,[,br,anchor,href,emType,emText]) => // pass 3
 		is(br) ? { ϵ: '⏎', br: true } :
 		is(anchor) ? { ϵ: '⇒', anchor: anchor, href: href } :
-		is(emText) ? { ϵ: '/', em: emType, text: emText } :
+		is(emText) ? { ϵ: '/', em: emType, emText: emText } :
 		NA, t=>({ ϵ: '¶', text: t }));
 	// lexer + compiler (to JXML)
-	return chunker([chunks.map(c=>c.ϵ).join('')], RX_HIERARCHAL_ELEMENTS, (i,l,[,space,heading,list,code,p]) =>
-		is(space) ? null : // discard
-		is(heading) ? integrate({ ['h'+chunks[i].lvl]: {
-			$id: chunks[i].heading.toLowerCase().replace(/[^a-z0-9]/ig, '-'),
-			_: chunks[i].heading }}) :
-		is(list) ? { [/[*-]/.test(chunks[i].listStyle) ? 'ul' : 'ol']:
-			chunks.slice(i,i+l).map(item=>({ li: markdown(item.listItem) })) } :
-		is(code) ? integrate({ pre: { code: { $class: chunks[i].lang, _: chunks[i].code }}}) :
-		is(p) ? integrate({ p: chunks.slice(i,i+l).map(atom=>
-			atom.em ? { [
-				/^[*_]$/.test(atom.em) ? 'strong' : // bold
-				'~' === atom.em ? 'code' : // monospace
-				'~~' === atom.em ? 's' : // strikethrough
-				'em']: atom.text } : // italics
-			atom.text ? atom.text :
-			atom.br ? { br: {} } :
-			atom.anchor ? integrate({ a: { $href: atom.href, _: atom.anchor }}) :
-			NA) }) :
-		NA, t=>'');
+	const jxml = chunker([chunks.map(c=>c.ϵ).join('')], RX_HIERARCHAL_ELEMENTS, (i,l,[,space,heading,list,code,p]) => {
+		const singleOrListMap = cb => 1 === l ? cb(chunks[i]) :
+			chunks.slice(i,i+l).map(cb).reduce((acc,v)=>acc.concat(v),[]);
+		return is(space) ? null : // discard
+			is(heading) ? integrate({ ['h'+chunks[i].lvl]: {
+				$id: chunks[i].heading.toLowerCase().replace(/[^a-z0-9]/ig, '-'),
+				_: chunks[i].heading }}) :
+			is(list) ? { [/[*-]/.test(chunks[i].listStyle) ? 'ul' : 'ol']:
+				singleOrListMap(item=>({ li: markdown(item.listItem, integrate) })) } :
+			is(code) ? integrate({ pre: { code: { $class: chunks[i].lang, _: chunks[i].code }}}) :
+			is(p) ? integrate(wrap(!inlineOnly, 'p', singleOrListMap(atom=>
+				atom.text ? atom.text :
+				atom.em ? { [
+					/^[*_]$/.test(atom.em) ? 'strong' : // bold
+					'~' === atom.em ? 'code' : // monospace
+					'~~' === atom.em ? 's' : // strikethrough
+					'em']: markdown(atom.emText, integrate, true) } : // italics
+				atom.br ? { br: {} } :
+				atom.anchor ? integrate({ a: { $href: atom.href, _: atom.anchor }}) :
+				NA))) :
+			NA;
+	}, t=>'');
+	return 1 === jxml.length ? jxml[0] : jxml;
 };
 export default markdown;

@@ -7,18 +7,18 @@ const _integrate_md = vnode => {
 		vnode.a.$onclick = Route.link;
 		return vnode;
 	}
-	else if (Utils.has(vnode, 'pre', 'code')) { // highlight code
+	if (Utils.has(vnode, 'pre', 'code')) { // highlight code
 		return {
 			$: Components.Code,
 			$lang: Utils.get(null, vnode, 'pre', 'code', '$class'),
 			_: Utils.get(null, vnode, 'pre', 'code', '_'),
 		};
 	}
-	else if ('CAUTION' === Utils.get(null, vnode, 'p', 0, 'strong')) {
+	if ('CAUTION' === Utils.get(null, vnode, 'p', 0, 'strong')) {
 		vnode.p.$class = 'warning';
 		return vnode;
 	}
-	else return vnode;
+	return vnode;
 };
 
 const doc = (uri, title, md) => {
@@ -32,7 +32,7 @@ const Components = {};
 
 Components.Code = {
 	oncreate: v => window.Prism.highlightAllUnder(v.dom),
-	view: v => ({ pre: { code: { $class: 'lang-'+v.attrs.lang, _: v.children }}}),
+	view: v => ({ pre: { code: { $class: 'language-'+v.attrs.lang, _: v.children }}}),
 };
 
 Components.Link = {
@@ -348,6 +348,8 @@ Components should use ~db.state~ if they wish to:
 *CAUTION*: Care must be taken to avoid namespace collisions when components share this global scope.
 
 ~~~js
+import db from 'm-js/db.js';
+
 Components.RememberedInput = {
 	oncreate(v) {
 		// restore value from global / local storage on first render.
@@ -622,7 +624,75 @@ console.log(db.history) // []
 ~~~
 `);
 
+doc('/api/hot/reloader', 'Hot.reloader() | API', `
+# Hot.reloader(app)
 
+## Description
+
+Hot reloading exchanges, adds, or removes modules while an application is running, without a full reload.
+
+A typical web developer's iteration cycle is:
+1. **Edit** code and save.
+2. Focus the browser and click **refresh**.
+3. **Wait** for the page to finish loading.
+4. **Get back** into the state where you were before the refresh.
+5. Finally, **test** the change that was just made on the first step above.
+
+This loop happens thousands of times a day. You don't even need to add up the time
+spent to realize why eliminating some of those steps could **save valuable time,
+money, and mental energy.**
+
+Hot reloading helps in a few *simple*, but *hugely impactful*, ways:
+
+- *No click necessary*—saving code triggers it. (~Ctl+S~ or ~⌘+S~)
+- Application *state is retained*. (e.g., deeply nested dialogs and form input survive refresh)
+- *Tweak CSS in real-time*. It's even faster than using browser devtools.
+- *Only changed assets reload*—you will not even see a flash of white!
+
+Analogous to [Hot Module Replacement (HMR)](https://webpack.js.org/concepts/hot-module-replacement/) by Webpack.
+
+## Example Instrumentation
+
+~~~js
+// client-side
+const App = {
+	init() {
+		// ...
+	}	
+};
+import HotClient from 'm-js/hot-client.js';
+Utils.onReady(HotClient.reloader(App));
+~~~
+
+The ~app~ argument should be an ~Object~ containing an ~init()~ method which is re-entrant
+and will successfully bootstrap or re-bootstrap your application any time
+its ~.js~ file is loaded or re-loaded.
+
+Returns a ~Function~ which will merge the new ~app~ methods over the existing
+running ~app~ instance, and reset [db.state](/api/db/state).
+
+~~~js
+// server-side
+
+const app = require('express')();
+const server = require('m-js/hot-server')({
+	app: app,
+	cwd: __dirname,
+	watch: '**/*.{js,styl}',
+});
+
+server.listen(3000, () =>
+	console.log('Listening...'));
+~~~
+
+File [hot-server.js](a) is a simple quick-start template to get you up and running
+long enough to trial the feature, decide if its right for you, and determine 
+how it works.
+
+While most hot loaders don't recommend production deployments, we anticipate
+if you need a more robust implementation you can simply copy and improve the
+example provided, as needed.
+`);
 
 // doc('/api/db/state', 'db.state() | API', `
 // # db.state()
@@ -648,5 +718,5 @@ const App = {
 	}	
 };
 export default App;
-import Hot from '../src/hot.js';
-Utils.onReady(Hot.reloader(App));
+import HotClient from '../src/hot-client.js';
+Utils.onReady(HotClient.reloader(App));

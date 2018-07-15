@@ -1,12 +1,12 @@
 import * as Utils from './utils.js';
 import Loader from './loader.js';
 
-// hot reload
+// hot reload client
 
 Loader.loadJs('/socket.io/socket.io.js', 'text/javascript', false).then(() => {
 	const socket = window.io();
 	socket.on('fs.change', filename => {
-		console.info('fs.change', filename);
+		console.debug('fs.change', filename);
 		if (/\.js$/.test(filename)) {
 			Loader.loadJs(filename, 'module', true);
 		}

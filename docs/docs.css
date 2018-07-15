@@ -22,7 +22,7 @@ body {
 }
 .left-sidebar,
 main.right {
-  padding-bottom: 5rem;
+  margin-bottom: 5rem;
 }
 .left-sidebar {
   padding: 1rem;
@@ -124,6 +124,7 @@ main.right h2 {
   font-size: 1.5rem;
   font-weight: 500;
   margin-bottom: 1rem;
+  margin-top: 1.75rem;
 }
 main.right h3.subtitle {
   color: #333;
@@ -160,6 +161,7 @@ main.right :not(pre) > code a {
 main.right pre {
   border-left: 3px solid #2c4d90;
   padding: 1rem;
+  margin-bottom: 1rem;
 }
 main.right pre > code {
   tab-size: 2;

@@ -19,15 +19,18 @@
   "author": "Mike Smullin",
   "license": "MIT",
   "devDependencies": {
-    "chokidar": "^2.0.4",
-    "express": "^4.16.3",
+		"express": "^4.16.3",
     "javascript-stringify": "^1.6.0",
     "nodemon": "^1.18.1",
     "rollup": "^0.62.0",
     "rollup-plugin-gzip": "^1.4.0",
     "rollup-plugin-uglify-es": "0.0.1",
-    "socket.io": "^2.1.1",
-    "stylus": "^0.54.5",
     "xml2js": "^0.4.19"
+  },
+  "dependencies": {
+		"debug": "^3.1.0",
+		"chokidar": "^2.0.4",
+		"stylus": "^0.54.5",
+		"socket.io": "^2.1.1"
   }
 }

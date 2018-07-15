@@ -1,27 +1,28 @@
 import m from './m.js';
 
 const _routes = {};
-const _router = uri => {
-	// find matching route
-	let route, match;
+
+const _routeMatches = uri => {
+	let match;
 	for (const key in _routes) {
 		const registration = _routes[key];
 		if (null != (match = uri.match(registration.rx))) {
 			if (!m.Component.isComponent(registration.vnode)) continue;
-			route = registration;
-
-			// expose regexp group match values
-			// for access by components
-			Route.params = match.slice(1);
-
-			// return first match
-			break;
+			return { route: registration, params: match.slice(1) };
 		}
 	}
-	// default to built-in 404 error page
-	if (null == match) {
-		route = _routes['404'];
+};
+
+const _router = uri => {
+	// find matching route
+	let route;
+	const match = _routeMatches(uri);	
+	if (null != match) {
+		route = match.route;
+		Route.params = match.params;
 	}
+	// default to built-in 404 error page
+	else route = _routes['404'];
 
 	// apply changes
 	document.title = Route.titleFormat(uri, route.title || '');
@@ -88,8 +89,10 @@ const Route = {
 		}
 	},
 
-	// also triggers onnavigate
-	redirect(uri) {	document.location.hash = uri; },
+	redirect(uri) {
+		if (_routeMatches(uri)) document.location.hash = uri; // triggers onnavigate
+		else document.location.href = uri; // off-site
+	},
 
 	// read-only
 	get uri() {	return document.location.hash.substr(1).split('?')[0]; },

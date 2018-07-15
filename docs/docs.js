@@ -127,7 +127,7 @@ Pages.Layout = {
 									{ $: Components.Link, $href: '/api/route/rewrite', _: '.rewrite()' },
 									{ $: Components.Link, $href: '/api/route/register', _: '.register()' },
 									{ $: Components.Link, $href: '/api/route/init', _: '.init()' },
-									{ $: Components.Link, $href: '/api/route/link', _: '.link()' },
+									{ $: Components.Link, $href: '/api/route/link', _: '.link' },
 									{ $: Components.Link, $href: '/api/route/redirect', _: '.redirect()' },
 									{ $: Components.Link, $href: '/api/route/uri', _: '.uri' },
 									{ $: Components.Link, $href: '/api/route/params', _: '.params' },
@@ -847,7 +847,7 @@ Where
 [RegExp](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp)
 ~String~ pattern, implicitly enclosed within ~^~ and ~$~.
 You can include capturing groups if you wish, and any values captured will be 
-available from ~Route.params~ for your component to interact with.
+available from [Route.params](/api/route/params) for your component to interact with.
 
 - The ~title~ parameter is a ~String~ which will be used by
 [Route.titleFormat()](/api/route/titleFormat)
@@ -908,6 +908,103 @@ can override this registration, but you don't have to.
 ~~~js
 Route.register('404', 'Not found', {
 	view: v=>({ 'h1': 'Error 404 Page not found' }) });
+~~~
+`);
+
+doc('/api/route/init', 'Route.init()', `
+# Route.init()
+
+## Description
+
+Binds the
+[window.onhashchange](https://developer.mozilla.org/en-US/docs/Web/Events/hashchange)
+event, and sets [m.root](/api/m/root) to the component matching the current
+[document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location).
+
+Assumes you have already called [Route.register()](/api/route/register),
+[Route.rewrite()](/api/route/rewrite), and overwritten [Route.titleFormat](/api/route/titleFormat), if you were going to.
+
+## Example
+
+~~~js
+Route.init();
+~~~
+`);
+
+doc('/api/route/link', 'Route.link', `
+# Route.link
+
+Returns a ~Function~ with the signature ~(e:MouseEvent)=>Boolean~.
+
+Where
+
+- The ~e~ parameter is a
+[MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent)
+resulting from the
+[onclick](https://developer.mozilla.org/en-US/docs/Web/API/GlobalEventHandlers/onclick)
+event firing on some ~HTMLElement~ with a non-empty
+[href](https://developer.mozilla.org/en-US/docs/Web/API/HTMLHyperlinkElementUtils/href)
+attribute value.
+
+## Description
+
+An optional component helper for use with clickable elements.
+
+If the ~href~ attribute of the
+[e.currentTarget](https://developer.mozilla.org/en-US/docs/Web/API/Event/currentTarget)
+is a non-relative URI,
+the click event will be allowed to proceed as normal, triggering a page
+navigation away from the single-page application.
+
+Otherwise, the click event will be intercepted, and the page will not be refreshed.
+Instead, [m.redraw()](/api/m/redraw) will be invoked to rearrange the screen
+to match the new target state of the destination route registered and matching
+the ~href~ value.
+
+In the latter case, when ~ctrlKey~ is held down,
+[window.open()](https://developer.mozilla.org/en-US/docs/Web/API/Window/open)
+will be used to load the new state in a new tab.
+
+## Example
+
+~~~js
+m.root = { a: {
+	$href: '/api/m/redraw',
+	$onclick: Route.link,
+	_: 'm.redraw()' }};
+m.render(); // would render the 404 page if this was the entire application
+~~~
+`);
+
+doc('/api/route/redirect', 'Route.redirect()', `
+# Route.redirect(uri)
+
+Where
+
+- The ~uri~ parameter is a ~String~ URI value.
+
+## Description
+
+Navigates
+[document.location](https://developer.mozilla.org/en-US/docs/Web/API/Document/location)
+to the given ~uri~.
+
+If ~uri~ matches a pattern registered by [Route.register()](/api/route/register),
+then [m.root](/api/m/root) will instead be updated to point at the component
+whose pattern is matched.
+
+## Example
+
+~~~js
+const Pages = {};
+Pages.Layout = {
+	oninit(v) {
+		if (null == window.user && !/^\/users\/login/.test(Route.uri)) {
+			Route.redirect('/users/login?returnTo='+Route.uri);
+			return false;
+		}
+	},
+};
 ~~~
 `);
 

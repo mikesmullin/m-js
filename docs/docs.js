@@ -266,6 +266,16 @@ doc('/api', 'API', `
 # API
 
 ## Cheatsheet
+
+*TODO*: Put an example application.
+
+## Example
+
+~~~js
+"Example goes here";
+~~~
+
+In the meantime, use the navigation menu to the left to get details on each method.
 `);
 
 doc('/api/m/root', 'm.root()', `
@@ -498,25 +508,15 @@ doc('/api/db/resetState', 'db.resetState()', `
 
 ## Description
 
-The object merged into [db.state](/api/db/state) by
-[db.applyDefaults()](/api/db/applyDefaults).
-
-Expects you to invoke if/when you want to use, typically from
-[document.onready](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
+Removes all keys defined in [db.state](/api/db/state).
 
 ## Example
 
 ~~~js
-Utils.onReady(()=> {
-	db.defaults.hello = 'Waldo';
-	db.applyDefaults();
-	console.log('Waldo' === db.state.hello); // true
-	// remains true until, some time later...
-	db.state.hello = 'world'; // set state, or
-	db.reloadState(); // load from persistent storage
-	// assuming nothing changes it again, some time later...
-	console.log('world' === db.state.hello); // true
-});
+db.state.a = 1;
+console.log(db.state); // { a: 1 }
+db.resetState();
+console.log(db.state); // {}
 ~~~
 `);
 

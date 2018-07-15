@@ -62,7 +62,7 @@ const Route = {
 		// kick-start
 		if ('' === document.location.hash.trim()) {
 			// set default route (also triggers onnavigate)
-			Route.navigateTo('/');
+			Route.redirect('/');
 		}
 		else {
 			// trigger router on existing location

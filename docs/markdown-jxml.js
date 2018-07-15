@@ -18,7 +18,8 @@ const chunker = (chunks, rx, cb, replaceText=t=>null) => { // tokenizer + lexer 
 	// console.log('chunks', chunks);
 	return chunks;
 };
-const is = v => null != v, NA = undefined, wrap = (cond,k,o) => cond ? { [k]: o } : o;
+const is = v => null != v, NA = undefined, wrap = (cond,k,o) => cond ? { [k]: o } : o,
+	allOrOne = a => 1 === a.length ? a[0] : a;
 const markdown = (str, integrate=o=>o, inlineOnly=false) => { // parser + compiler
 	// chunks (becomes p tag if any leftover text)
 	const RX_CHUNKS = /(?:^~~~(\w{1,99})?(?:\r\n|\n|$)([\s\S]{1,9999}?)(?:\r\n|\n|$)~~~(?:\r\n|\n|$)|((?:.{1,9999}(?:\r\n|\n|$)){1,99}))/gm;
@@ -44,17 +45,16 @@ const markdown = (str, integrate=o=>o, inlineOnly=false) => { // parser + compil
 		is(emText) ? { ϵ: '/', em: emType, emText: emText } :
 		NA, t=>({ ϵ: '¶', text: t }));
 	// lexer + compiler (to JXML)
-	const jxml = chunker([chunks.map(c=>c.ϵ).join('')], RX_HIERARCHAL_ELEMENTS, (i,l,[,space,heading,list,code,p]) => {
-		const singleOrListMap = cb => 1 === l ? cb(chunks[i]) :
-			chunks.slice(i,i+l).map(cb).reduce((acc,v)=>acc.concat(v),[]);
+	return allOrOne(chunker([chunks.map(c=>c.ϵ).join('')], RX_HIERARCHAL_ELEMENTS, (i,l,[,space,heading,list,code,p]) => {
+		const singleOrFlatMap = cb => allOrOne(chunks.slice(i,i+l).map(cb).reduce((acc,v)=>acc.concat(v),[]));
 		return is(space) ? null : // discard
 			is(heading) ? integrate({ ['h'+chunks[i].lvl]: {
 				$id: chunks[i].heading.toLowerCase().replace(/[^a-z0-9]/ig, '-'),
 				_: chunks[i].heading }}) :
 			is(list) ? { [/[*-]/.test(chunks[i].listStyle) ? 'ul' : 'ol']:
-				singleOrListMap(item=>({ li: markdown(item.listItem, integrate) })) } :
+				singleOrFlatMap(item=>({ li: markdown(item.listItem, integrate) })) } :
 			is(code) ? integrate({ pre: { code: { $class: chunks[i].lang, _: chunks[i].code }}}) :
-			is(p) ? integrate(wrap(!inlineOnly, 'p', singleOrListMap(atom=>
+			is(p) ? integrate(wrap(!inlineOnly, 'p', singleOrFlatMap(atom=>
 				atom.text ? atom.text :
 				atom.em ? { [
 					/^[*_]$/.test(atom.em) ? 'strong' : // bold
@@ -65,7 +65,6 @@ const markdown = (str, integrate=o=>o, inlineOnly=false) => { // parser + compil
 				atom.anchor ? integrate({ a: { $href: atom.href, _: atom.anchor }}) :
 				NA))) :
 			NA;
-	}, t=>'');
-	return 1 === jxml.length ? jxml[0] : jxml;
+	}, t=>''));
 };
 export default markdown;

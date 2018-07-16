@@ -2,8 +2,6 @@
 
 > M.js is a minimalist, modernist, UI component framework for the web.
 
-**WARNING:** Release status is very much alpha... Don't expect anything to work.
-
 ## Hosted Documentation
 
 https://mikesmullin.github.io/m-js/

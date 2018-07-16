@@ -213,8 +213,11 @@ main.right .warning {
   padding: 1rem;
 }
 main.right .warning,
-main.right .warning * {
+main.right .warning strong {
   color: #75730b;
+}
+main.right .warning a {
+  color: #545318;
 }
 main.right footer {
   border-top: 1px solid #eee;

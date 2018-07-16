@@ -14,7 +14,7 @@ const _integrate_md = vnode => {
 			_: Utils.get(null, vnode, 'pre', 'code', '_'),
 		};
 	}
-	if (['CAUTION','WARNING','NOTE'].includes(Utils.get(null, vnode, 'p', 0, 'strong'))) {
+	if (['CAUTION','WARNING','NOTE','TODO'].includes(Utils.get(null, vnode, 'p', 0, 'strong'))) {
 		vnode.p.$class = 'warning';
 		return vnode;
 	}
@@ -77,6 +77,7 @@ Pages.Layout = {
 									{ $: Components.Link, $href: '/guide/welcome/examples', _: 'Examples' },
 									{ $: Components.Link, $href: '/guide/welcome/releases', _: 'Releases' },
 									{ $: Components.Link, $href: '/guide/welcome/support', _: 'Support' },
+									{ $: Components.Link, $href: '/guide/welcome/alternatives', _: 'Alternatives' },
 								]
 							}},
 							{ li: {
@@ -177,28 +178,23 @@ Pages.Layout = {
 
 doc('/guide/welcome/introduction', 'Introduction', `
 # Introduction
-			
-## What is a web component?
 
-An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application.
-They are the modular equivalent of bricks which you can use to build your website's look and feel.
-Examples of web components include buttons, links, forms, menus, loading spinners, etc.
-More than just HTML, they are stateful, defined primarily in Javascript, and may contain data which persists beyond the usual DOM lifecycle.
+*TODO*: List sales talking points here.
 
-Components are typically bundled so that all dependencies (~.css~, images, ~.js~, ~.html~,
-and any other assets) are in a single file or folder for easy import and removal from a project.
-Sometimes exchange markets are made to redistribute and sell above-average components.
+`);
 
-## What is a component framework?
+doc('/guide/welcome/alternatives', 'Alternatives', `
+# Alternatives
 
-The central idea is reusability across devices and platforms—desktop and mobile—
-via a transparent browser, or a native analog, bundled and shipped with your distribution.
-Your application can now provide the same experience, no matter how users prefer to interface with it,
-but you have to follow a set of guidelines, and sometimes install dependencies—both of which are the framework.
+Hyperlinks and citations have been littered throughout this documentation to
+give credit to the frameworks and libraries which have inspired this effort.
 
-*WARNING*: Our mobile support is limited to the mobile browser only. We don't compile native.
-You could still bundle and ship with [Electron](https://electronjs.org/) or
-[Apache Cordova](https://cordova.apache.org/) if you need, but you'd be on your own.
+In particular:
+
+- Mithril
+- React
+- Webpack
+
 `);
 
 doc('/guide/vnode/jxml/introduction', 'JXML', `
@@ -275,7 +271,7 @@ Continue reading the next chapter to learn more about our version of JXML.
 `);
 
 doc('/guide/virtual-dom/introduction', 'Virtual DOM', `
-# Virtual DOM
+# The Virtual DOM
 
 ## What is it?
 			
@@ -309,6 +305,35 @@ for this case explicitly, by changing the child's parent node on a successful dr
 rather than challenging the VDOM to figure it out in constant time on every frame with an N-deep tree.
 This is why component key properties are only useful among siblings.
 `);
+
+doc('/guide/components/introduction', 'Components', `
+# Components
+			
+## What is a web component?
+
+An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application.
+They are the modular equivalent of bricks which you can use to build your website's look and feel.
+Examples of web components include buttons, links, forms, menus, loading spinners, etc.
+More than just HTML, they are stateful, defined primarily in Javascript, and may contain data which persists beyond the usual DOM lifecycle.
+
+Components are typically bundled so that all dependencies (~.css~, images, ~.js~, ~.html~,
+and any other assets) are in a single file or folder for easy import and removal from a project.
+Sometimes exchange markets are made to redistribute and sell above-average components.
+
+## What is a component framework?
+
+The central idea is reusability across devices and platforms—desktop and mobile—
+via a transparent browser, or a native analog, bundled and shipped with your distribution.
+Your application can now provide the same experience, no matter how users prefer to interface with it,
+but you have to follow a set of guidelines, and sometimes install dependencies—both of which are the framework.
+
+*WARNING*: Our mobile support is limited to the mobile browser only. We don't compile native.
+You could still bundle and ship with [Electron](https://electronjs.org/) or
+[Apache Cordova](https://cordova.apache.org/) if you need, but you'd be on your own.
+`);
+
+
+
 
 doc('/api/m/root', 'm.root()', `
 # m.root()

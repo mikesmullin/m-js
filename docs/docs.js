@@ -84,7 +84,7 @@ Pages.Layout = {
 								a: 'VNode',
 								ul: [
 									{ $: Components.Link, $href: '/guide/vnode/jxml/introduction', _: 'Why JXML?' },
-									{ $: Components.Link, $href: '/guide/vnode/selectors', _: 'Selectors' },
+									{ $: Components.Link, $href: '/guide/vnode/tags', _: 'Tags' },
 									{ $: Components.Link, $href: '/guide/vnode/attributes', _: 'Attributes' },
 									{ $: Components.Link, $href: '/guide/vnode/hierarchy', _: 'Hierarchy' },
 									{ $: Components.Link, $href: '/guide/vnode/security', _: 'Security' },
@@ -183,6 +183,32 @@ doc('/guide/welcome/introduction', 'Introduction', `
 
 `);
 
+doc('/guide/welcome/examples', 'Examples', `
+# Examples
+
+*TODO*: A small todolist app will appear here. Will use CodePen.io.
+
+~~~js
+"hello world";
+~~~
+`);
+
+doc('/guide/welcome/releases', 'Releases', `
+# Releases
+
+Browse the Releases section of the Github repository.
+
+[https://github.com/mikesmullin/m-js/branches](https://github.com/mikesmullin/m-js/branches)
+`);
+
+doc('/guide/welcome/support', 'Support', `
+# Support
+
+Open a new Issue on Github.
+
+[https://github.com/mikesmullin/m-js/issues](https://github.com/mikesmullin/m-js/issues)
+`);
+
 doc('/guide/welcome/alternatives', 'Alternatives', `
 # Alternatives
 
@@ -191,10 +217,9 @@ give credit to the frameworks and libraries which have inspired this effort.
 
 In particular:
 
-- Mithril
-- React
-- Webpack
-
+- [Mithril](https://mithril.js.org/)
+- [Redux](https://redux.js.org/)
+- [Webpack](https://webpack.js.org/)
 `);
 
 doc('/guide/vnode/jxml/introduction', 'JXML', `
@@ -234,11 +259,99 @@ Main differences include:
 
 - Support for components using the dollar ~$~ attribute. e.g.,
 
+- Support for many variations of [nested children](/guide/vnode/hierarchy).
+
+*NOTE*: The original JXON child hierachy is not supported. Only the above syntax.
+
+## Background
+
+For a component to work the same in different places, it needs a way to be described in a neutral form
+that is eventually compatible with both targets. In the case of a web browser, the target is the Document
+Object Model (or DOM) which, for the purposes of backward compatibility, tends to yield very low performance.
+Today, our users are conditioned to expect low latency, hyper responsive animations, transitions, and
+even the use of physics with spring dynamics, collision, and layering effects.
+
+JXML and the Virtual DOM wed perfectly to help us meet modern user demands at high FPS.
+
+Continue reading the next chapter to learn more about our version of JXML.
+`);
+
+doc('/guide/vnode/tags', 'Tags', `
+# Tags
+
+The tag names can be formatted like CSS selectors, as a convenience.
+
+You can include:
+
+- One HTML tag name e.g., ~div~
+- Multiple CSS classes e.g., ~.one.two.three~
+- Multiple id attributes (semantically, only one is meaningful) e.g., ~#id~
+- Multiple other attributes e.g., ~[key=value][data-toggle="smurfy boi"]~
+
+This helps distinguish children with similar tag names in an ~Object~.
+
+It also helps reduce boilerplate throughout intricate markup structure.
+
+Of course, you can always set them the verbose way:
+
+~~~js
+{ div: {
+	$class: 'one two three',
+	$id: 'id',
+	$key: 'value',
+	'$data-toggle': 'smurfy boi'
+}}
+~~~
+`);
+
+doc('/guide/vnode/attributes', 'Attributes', `
+# Attributes
+
+Any key name that is prefixed by a dollar ~$~ symbol will be set as an
+attribute on the final value.
+
+## Magic Values
+
+If an existing DOM element already has an attribute key by the same name,
+defining a value of:
+
+- ~null~ will cause the existing value to be preserved.
+- ~undefined~ will cause it to be removed.
+- any other value will replace the existing value. 
+
+## Reserved Attributes
+
+- The [$key](/guide/virtual-dom/keys) attribute is reserved for internal use
+when used with the [Virtual DOM](/guide/virtual-dom/introduction).
+- The dollar attribute (~$~) is reserved for referencing a
+[Component](/guide/components/introduction).
+- The underscore attribute (~_~) is reserved for holding a
+[collection of children](/guide/vnode/hierarchy).
+
+## Example
+
 ~~~js
 { $: Components.TextInput, $name: 'cash', $defaultValue: 1000.00 }
 ~~~
+`);
 
-- Support for many variations of nesting children,. e.g.,
+doc('/guide/vnode/hierarchy', 'Hierarchy', `
+# Hierarchy
+
+~VNode~ children exist within collections. Collections can be:
+
+- an ~Object~, in which case each key is a child.
+
+*CAUTION*: Defining children within an ~Object~ means each child tag must be
+unique. Otherwise the latter definition will override all previous children with
+the same tag name.
+
+- an ~Array~, in which case each list item is a child.
+
+- a single ~String~ or ~Number~ literal, in which case there is only one child
+in the collection, and it is a ~Text~ node.
+
+## Examples
 
 ~~~js
 [
@@ -255,19 +368,11 @@ Main differences include:
 ]
 ~~~
 
-*NOTE*: The original JXON child hierachy is not supported. Only the above syntax.
+`);
 
-## Background
+doc('/guide/vnode/security', 'Security', `
+# Security
 
-For a component to work the same in different places, it needs a way to be described in a neutral form
-that is eventually compatible with both targets. In the case of a web browser, the target is the Document
-Object Model (or DOM) which, for the purposes of backward compatibility, tends to yield very low performance.
-Today, our users are conditioned to expect low latency, hyper responsive animations, transitions, and
-even the use of physics with spring dynamics, collision, and layering effects.
-
-JXML and the Virtual DOM wed perfectly to help us meet modern user demands at high FPS.
-
-Continue reading the next chapter to learn more about our version of JXML.
 `);
 
 doc('/guide/virtual-dom/introduction', 'Virtual DOM', `

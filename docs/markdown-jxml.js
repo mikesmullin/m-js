@@ -33,7 +33,7 @@ const markdown = (str, integrate=o=>o, inlineOnly=false) => { // parser + compil
 		is(code) ? { ϵ: '✎', code: code, lang: lang } :
 		is(chunk) ? chunk :
 		NA, ()=>({ ϵ: '␠', space: true }));
-	chunker(chunks, RX_BLOCK_ELEMENTS, (i,l,[,headingLvl,heading,listIndent,listStyle,listItem]) => // pass 2
+	if (!inlineOnly) chunker(chunks, RX_BLOCK_ELEMENTS, (i,l,[,headingLvl,heading,listIndent,listStyle,listItem]) => // pass 2
 		is(heading) ? { ϵ: '␁', heading: heading, lvl: headingLvl.length } :
 		is(listItem) ? { ϵ: '•',
 			listItem: listItem.replace(new RegExp('^'+listIndent,'gm'), ''),

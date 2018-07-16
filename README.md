@@ -2,6 +2,10 @@
 
 > M.js is a minimalist, modernist, UI component framework for the web.
 
+## Core Source (<400 lines)
+
+https://github.com/mikesmullin/m-js/blob/master/src/m.js
+
 ## Hosted Documentation
 
 https://mikesmullin.github.io/m-js/
@@ -14,3 +18,13 @@ https://mikesmullin.github.io/m-js/
 	and a generally example you can use to learn from source code.
 
   https://github.com/mikesmullin/m-js/blob/master/docs/docs.js
+
+## Added Bonus
+
+- Smallest Markdown parser at <70 lines  
+  https://github.com/mikesmullin/m-js/blob/master/docs/markdown-jxml.js
+
+
+## License
+
+MIT

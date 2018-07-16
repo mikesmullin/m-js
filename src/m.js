@@ -1,49 +1,5 @@
 import * as Utils from './utils.js';
 
-/*
-	Pug markup
-
-	!doctype html
-	html
-		body
-			p#id.cls[attr=val]
-				hello
-				strong how
-				are you?
-
-	becomes:
-	JXML ([lossless] Javascript XML)
-
-	{
-		"!doctype": { $html: null },
-		html: { body: {
-			p: { $id: 'id', $class: 'cls', $attr: 'val', _: [
-				'hello',
-				{ strong: { _: 'how' } },
-				'are you?'
-			]}
-		}}
-	}
-*/
-
-// dom, attrs, children
-// notice: component has state, vnode does not
-// notice: therefore only a component instance needs to track state
-// todo: concept of soft-delete: removes from dom but doesn't lose state. then state becomes useful again
-
-// vnode = [{ tag: null }, ...] === <tag/>
-// vnode = [{ tag: { $attr: 'val' } }, ...] === <tag attr="val"/>
-// vnode = [{ tag: { $attr: 'val', _: VNODE } }, ...]
-//     ex: [{ tag: { $attr: 'val', _: ['hello ', { strong: { _: 'every' }}, ' one' ] } }, ...] === <tag attr="val">hello <strong>every</strong> one</tag>
-// notice: when printing for brevity, the arrays are optional; replacing with `anything` is the same as `[anything]`
-//     ex:  { tag: { $attr: 'val', _: 'hello world' } } === <tag attr="val">hello world</tag>
-// notice: likewise, since attrs are namespaced by $ prefix, children can be implicit as well,
-//         but only if their tag names are unique
-//     ex:  { a: { $b: 'c', d: { e: { _: 'f' }}}} === <a b="c"><d><e>f</e></d></a>
-
-// see also: https://www.freeformatter.com/xml-to-json-converter.html
-// note: set "Prefix attributes with:" to "$" and "#text property name:" to "_"
-
 // VNode is basically composable branches and traversal
 const eachTag = function*(o) {
 	if (!Utils.isObject(o)) return;
@@ -51,7 +7,6 @@ const eachTag = function*(o) {
 		if ('$'===k && 'object' !== typeof o.$) yield o.$;
 		else if (!('$'===k[0] || '_'===k[0])) yield k;
 };
-
 export let VNode = class VNode {
 	constructor(tag, attrs, ...children) {
 		let o;
@@ -117,7 +72,6 @@ VNode.children = function*(o) {
 	else if ('string' === typeof o || 'number' === typeof o)
 		yield o;
 };
-
 
 // m() is basically reduced to an (optional) string parser
 // use it if it want, or just write the JXML directly to save cycles. your choice.
@@ -321,7 +275,6 @@ const applyVirtualDom = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
 		}
 	};
 
-
 	// --- BEGIN LOOP ---
 	vnode = unwrapInitComponentStack(vnode);
 	let componentInstStackOuterMarker = componentInstStack.length;
@@ -435,14 +388,9 @@ const _redraw = now => {
 };
 m.renderCount = 0;
 m.redraw = () => {
-	if (null != timer) {
-		console.warn('already redrawing...');
-		return;
-	}
-
+	if (null != timer) return;
 	timer = 1;
 	_redraw();
-	// timer = requestAnimationFrame(_redraw);
 };
 
 export default m;

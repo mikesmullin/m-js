@@ -58,14 +58,23 @@ main.right {
 }
 .left-sidebar ul.link-list li.list-item {
   list-style-type: none;
-  display: block;
-  margin-right: 0.5rem;
   border-left: 1px solid #bbb;
-  padding-left: 0.5rem;
+}
+.left-sidebar ul.link-list li.list-item a {
+  display: block;
+  margin: 0 0.5rem;
+  border-bottom: 3px solid transparent;
+  padding-bottom: 3px;
+}
+.left-sidebar ul.link-list li.list-item.active a {
+  border-bottom: 3px solid #2c4d90;
 }
 .left-sidebar ul.link-list li.list-item:first-child {
   border-left: none;
   padding-left: 0;
+}
+.left-sidebar ul.link-list li.list-item a:hover {
+  text-decoration: none;
 }
 .left-sidebar .toc ul li {
   white-space: nowrap;
@@ -76,13 +85,15 @@ main.right {
   margin-top: 0;
 }
 .left-sidebar .toc ul li li {
+  border-left: 3px solid transparent;
+  padding-left: 0.25rem;
   margin-left: 1rem;
+}
+.left-sidebar .toc ul li li.active {
+  border-left: 3px solid #2c4d90;
 }
 .left-sidebar .toc ul li li:first-child {
   margin-top: 0.25rem;
-}
-.left-sidebar .toc ul li li.active ul {
-  border-left: 3px solid #2c4d90;
 }
 a,
 .link {

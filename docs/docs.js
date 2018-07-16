@@ -27,9 +27,7 @@ const doc = (uri, title, md) => {
 	});
 };
 
-
 const Components = {};
-
 Components.Code = {
 	oncreate: v => window.Prism.highlightAllUnder(v.dom),
 	view: v => ({ pre: { code: { $class: 'language-'+v.attrs.lang, _: v.children }}}),
@@ -38,9 +36,11 @@ Components.Code = {
 Components.Link = {
 	view(v) {
 		return { 'li.list-item': {
-			$class: Route.uri === v.attrs.href ?
-				Utils.joinStringIfNotEmpty(v.attrs.class, ' ',  'active') :
-				v.attrs.class,
+			$class: (v.attrs.relative ?
+				-1 !== Route.uri.search(v.attrs.href) :
+				Route.uri === v.attrs.href) ?
+					Utils.joinStringIfNotEmpty(v.attrs.class, ' ',  'active') :
+					v.attrs.class,
 			'a.link': {
 				$target: v.attrs.target,
 				$href: v.attrs.href,
@@ -61,9 +61,9 @@ Pages.Layout = {
 					'.version': '1.0.0',
 				},
 				'ul.link-list': [
-					{ $: Components.Link, $href: '/guide', _: 'Guide' },
-					{ $: Components.Link, $href: '/api', _: 'API' },
-					{ $: Components.Link, $href: 'https://www.github.com/mikesmullin/m-js', $target: '_blank', _: 'GitHub' },
+					{ $: Components.Link, $relative: true, $href: '/guide', _: 'Guide' },
+					{ $: Components.Link, $relative: true, $href: '/api', _: 'API' },
+					{ $: Components.Link, $relative: true, $href: 'https://www.github.com/mikesmullin/m-js', $target: '_blank', _: 'GitHub' },
 				],
 				'nav.toc': 
 				/^\/guide/.test(Route.uri) ?
@@ -73,8 +73,7 @@ Pages.Layout = {
 								a: 'Quick Start',
 								ul: [
 									{ $: Components.Link, $href: '/guide/welcome/featureset', _: 'Featureset' },
-									{ $: Components.Link, $href: '/guide/welcome/introduction', _: 'Introduction' },
-									{ $: Components.Link, $href: '/guide/welcome/examples', _: 'Examples' },
+									// { $: Components.Link, $href: '/guide/welcome/examples', _: 'Examples' },
 									{ $: Components.Link, $href: '/guide/welcome/releases', _: 'Releases' },
 									{ $: Components.Link, $href: '/guide/welcome/support', _: 'Support' },
 									{ $: Components.Link, $href: '/guide/welcome/alternatives', _: 'Alternatives' },
@@ -94,7 +93,7 @@ Pages.Layout = {
 								a: 'Virtual DOM',
 								ul: [
 									{ $: Components.Link, $href: '/guide/virtual-dom/introduction', _: 'What is it?' },
-									{ $: Components.Link, $href: '/guide/virtual-dom/rendering', _: 'Rendering' },
+									// { $: Components.Link, $href: '/guide/virtual-dom/rendering', _: 'Rendering' },
 									{ $: Components.Link, $href: '/guide/virtual-dom/keys', _: 'Keys' },
 								]
 							}},
@@ -176,13 +175,6 @@ Pages.Layout = {
 	}
 };
 
-doc('/guide/welcome/introduction', 'Introduction', `
-# Introduction
-
-*TODO*: List sales talking points here.
-
-`);
-
 doc('/guide/welcome/examples', 'Examples', `
 # Examples
 
@@ -198,7 +190,7 @@ doc('/guide/welcome/releases', 'Releases', `
 
 Browse the Releases section of the Github repository.
 
-[https://github.com/mikesmullin/m-js/branches](https://github.com/mikesmullin/m-js/branches)
+[https://github.com/mikesmullin/m-js/releases](https://github.com/mikesmullin/m-js/releases)
 `);
 
 doc('/guide/welcome/support', 'Support', `
@@ -251,14 +243,11 @@ and common [xml2json](https://www.npmjs.com/package/xml2json) output.
 
 Main differences include:
 
-- Support for tags names that include CSS classes, ID, and other attributes. e.g.,
-
-~~~js
-{ 'div#patient-1023.patient[prognosis=terminal]': 'Freddie' }
-~~~
-
-- Support for components using the dollar ~$~ attribute. e.g.,
-
+- Support for
+	[tags](/guide/vnode/tags) that include CSS classes, ID, and other
+	[attributes](/guide/vnode/attributes).
+- Support for [components](/guide/components/introduction) using the dollar ~$~
+	[attribute](/guide/vnode/attributes).
 - Support for many variations of [nested children](/guide/vnode/hierarchy).
 
 *NOTE*: The original JXON child hierachy is not supported. Only the above syntax.
@@ -324,14 +313,17 @@ defining a value of:
 - The [$key](/guide/virtual-dom/keys) attribute is reserved for internal use
 when used with the [Virtual DOM](/guide/virtual-dom/introduction).
 - The dollar attribute (~$~) is reserved for referencing a
-[Component](/guide/components/introduction).
+[component](/guide/components/introduction).
 - The underscore attribute (~_~) is reserved for holding a
 [collection of children](/guide/vnode/hierarchy).
 
 ## Example
 
 ~~~js
-{ $: Components.TextInput, $name: 'cash', $defaultValue: 1000.00 }
+{ 'div#patient-1023.patient[prognosis=terminal]': {
+		label: "Freddie's Balance Due",
+		{ $: Components.TextInput, $name: 'cash', $defaultValue: 1000000.00 }
+}}
 ~~~
 `);
 
@@ -371,8 +363,53 @@ in the collection, and it is a ~Text~ node.
 `);
 
 doc('/guide/vnode/security', 'Security', `
-# Security
+# Security Threat Models
 
+## HTML Entities & Special Characters
+
+It is not possible to provide entities like ~&lt;~, 
+~&#169;~, or ~&#x000AB;~ even if you wanted to. Characters like ~<~, ~>~, ~&~,
+etc. are escaped by being inside of a ~String~ while in JSON format.
+
+If you want to provide a symbol do so using a UTF-8 or UTF-16 encoded source
+document, and then you can just paste the symbol directly into the text, rather
+expecting the library to parse and translate an ASCII-encoded entity sequence.
+
+## Cross-site Scripting (XSS) Injection
+
+Since a ~VNode~ is encoded using JSON format, and no string-to-HTML conversion 
+logic is present anywhere in the runtime, we enjoy an initial defense
+against both stored and reflected types of injection attacks, because we skip
+the HTML parsing step altogether.
+
+Only ~String~ data is injected into the DOM by [m.redraw()](/api/m/redraw)
+either as an attribute or a ~#Text~ node ~.data~ value, which is treated as
+displayable text.
+
+However the DOM-based attacks are still a concern. Therefore, when attaching 
+user input to a ~VNode~, always:
+
+- cast it to a ~String~ first.
+
+*WARNING*: You must manually validate against script injection when
+user input is a ~String~ but you are passing it into an HTML attribute that
+supports Javascript code subcontexts such as ~$href~ or any of the event 
+handlers like ~$onsubmit~ or ~$onclick~. Or when passing it through a function
+like
+[JSON.parse](https://medium.com/intrinsic/javascript-prototype-poisoning-vulnerabilities-in-the-wild-7bc15347c96)
+or [new RegExp()](https://stackoverflow.com/questions/17116675/why-does-this-regex-make-chrome-hang)
+or [eval()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval).
+
+- avoid using the value in place of ~VNode~ attributes or tags.
+
+*WARNING*: User input that is NOT a ~String~ or ~Number~ should not be appended
+to a ~VNode~. Otherwise attackers will pass a JXML ~Object~ to successfully
+inject without limitation.
+
+Recommended reading:
+
+- [OWASP XSS](https://www.owasp.org/index.php/Cross-site_Scripting_(XSS))
+- [OWASP DOM-based XSS Prevention Cheat Sheet](https://www.owasp.org/index.php/DOM_based_XSS_Prevention_Cheat_Sheet)
 `);
 
 doc('/guide/virtual-dom/introduction', 'Virtual DOM', `
@@ -411,9 +448,40 @@ rather than challenging the VDOM to figure it out in constant time on every fram
 This is why component key properties are only useful among siblings.
 `);
 
+doc('/guide/virtual-dom/rendering', 'Rendering', `
+# Rendering
+
+Happens using [m.redraw()](/api/m/redraw).
+`);
+
+doc('/guide/virtual-dom/keys', 'Keys', `
+# Keys
+
+Defining a ~$key~ [attribute](/guide/vnode/attributes) on a ~VNode~ enables the 
+[Virtual DOM](/guide/virtual-dom/introduction) to determine whether the target
+DOM node still exists, even if it has been reordered among its siblings, or
+modified by something external. It does this by matching the value on the DOM
+node to the value on the ~VNode~. The value is expected to be a ~String~.
+
+This attribute is stored internally using ~Utils.data()~ which holds a 
+[WeakMap](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap)
+pure-Javascript in-memory reference. As long as the DOM node is not deleted,
+its ~Object~ instance will forever tie it to the ~$key~ attribute, if one was
+defined.
+
+If no ~$key~ is not defined, the [m.redraw()](/api/m/redraw) method may choose
+to delete the prior instance of your element just because it is easier than 
+finding it again after it has moved or been significantly altered.
+That can be a problem if external scripts such as jQuery or Bootstrap have
+attached state to the DOM element, since it will be lost.
+
+*WARNING*: Keys are only used among sibling nodes. If your DOM node needs to
+survive moving outside of its parent, you should plan to re-parent it manually.
+`);
+
 doc('/guide/components/introduction', 'Components', `
 # Components
-			
+
 ## What is a web component?
 
 An encapsulated, reusable, and composable element which—in aggregate—make up the user interface on a web application.
@@ -437,8 +505,62 @@ You could still bundle and ship with [Electron](https://electronjs.org/) or
 [Apache Cordova](https://cordova.apache.org/) if you need, but you'd be on your own.
 `);
 
+doc('/guide/components/lifecycle', 'Lifecycle', `
+# Lifecycle
+
+All components have optional events callbacks you can define.
+
+## Component Methods
+
+If defined, the following methods will be called:
+
+- ~oninit(v)~: on insert, append, or replace (instantiation), before dom element exists
+- ~view(v)~: on every render (the only required function)
+- ~oncreate(v)~: just after ~init()~ is complete; dom element now exists
+- ~onbeforeupdate(v)~: before diff happens on a node. return false to avoid checking (like manual ~$dirty: false~)
+- ~onupdate(v)~: for pre-existing dom element, post-diff on each [m.render()](/api/m/render) cycle
+- ~onbeforeremove(v)~: before removeChild is invoked
+- ~onremove(v)~: after removeChild is invoked
+
+Where
+
+- The ~v~ parameter is an ~Object~ containing the following properties:
+
+- ~dom~ is a reference to the DOM element.
+- ~attrs~ is an ~Object~ holding any
+[attributes](/guide/vnode/attributes)
+passed to the 
+[component](/guide/components/introduction).  
+These do not have the dollar ~$~
+prefix.
+- ~children~ is an ~Array~ of child ~VNode~ objects.
+- ~state~ is an ~Object~ but only when instantiated using
+  [m.instance()](/api/m/instance).
+`);
+
+doc('/guide/components/opinions', 'Opinions', `
+# Opinions
+
+## No heavy compute in the view() method
+
+Its [bad practice](/api/m/redraw).
+
+## Stateless is best
+
+Its rare that a component will hold state that you wouldn't want to store
+beyond its [lifecycle](/guide/components/lifecycle).
+
+Most components benefit from having no state, 
+[static state](/api/m/instance)
+or [global state](/api/db/state).
+
+## Delaying create and removal for animation
+
+Its better not to block the redraw loop. Just delete your ~VNode~ once its time.
 
 
+
+`);
 
 doc('/api/m/root', 'm.root()', `
 # m.root()
@@ -457,26 +579,17 @@ m.root = { p: 'Hello world!' };
 ~~~
 `);
 
-Pages.Guide = {
-	view(v) {
-		return { $: Pages.Layout, _: [
-			{ 'h1.title': 'Featureset' },
+doc('/guide/welcome/featureset', 'Featureset', `
+# Featureset
 
-			{ 'h3.subtitle': [ `“M.js is a minimalist, modernist, UI component framework for the web.”` ]},
-			
+### “M.js is a minimalist, modernist, UI component framework for the web.”
 
-			{ h2: `Why distribute ES6? Why not support older browsers?` },
-			
-			{ p: `This is not a general purpose framework. Its specific purposes are low memory footprint, and high performance. `+
-				`We test for and support latest Firefox and Chrome for desktop and mobile, `+
-				`but latest Edge, Safari, and Opera are believed to work, as well. ` },
-			{ p: [
-				`Also, its ${new Date().getFullYear()}—everyone is staying `,
-				{ a: { $href: 'https://en.wikipedia.org/wiki/Usage_share_of_web_browsers', _: 'current' }},
-				` due to rampant exploitation of security vulnerabilities. Friends don't let friends use non-free, privacy violating, insecure browsers.` ]},
-		]};
-	}
-};
+- Web component framework
+- Small. <5KB (<2KB gzipped)
+- High frame rate (fast render)
+- Written in ES6 with ECMAScript Modules
+- Redux-like state and history features
+`);
 
 doc('/api', 'API', `
 # API
@@ -1398,23 +1511,6 @@ Pages.Ideas.New = {
 ~~~
 `);
 
-
-
-// doc('/api/db/state', 'db.state()', `
-// # db.state()
-//
-// ## Description
-//
-// This is a template.
-//
-// ~~~js
-// var workInProgress = true;
-// ~~~
-// `);
-
-
-
-
 const App = {
 	init() {
 		Route.titleFormat = (uri,s) => s + (
@@ -1423,7 +1519,6 @@ const App = {
 			'') + ' | M.js Documentation';
 		Route.rewrite('/', '/guide/welcome/featureset');
 		Route.rewrite('/guide', '/guide/welcome/featureset');
-		Route.register('/guide/welcome/featureset', 'Featureset', Pages.Guide);
 		Route.init();
 	}	
 };

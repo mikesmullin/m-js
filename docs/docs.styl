@@ -56,15 +56,19 @@ body
 		margin-bottom spacer
 		li.list-item
 			list-style-type none
-			display block
-			margin-right spacer*.5
 			border-left 1px solid #bbb
-			padding-left spacer*.5
-			// padding-top spacer*.25
-			// padding-bottom spacer*.25
+			a
+				display block
+				margin 0 spacer*.5
+				border-bottom 3px solid transparent
+				padding-bottom 3px
+			&.active a
+				border-bottom 3px solid color-blue
 			&:first-child
 				border-left none
 				padding-left 0
+			a:hover
+				text-decoration none
 
 	.toc
 		ul
@@ -75,11 +79,13 @@ body
 				&:first-child
 					margin-top 0
 				li
+					border-left 3px solid transparent
+					padding-left spacer*.25
+					&.active
+						border-left 3px solid color-blue
 					margin-left spacer
 					&:first-child
 						margin-top spacer*.25
-					&.active ul
-						border-left 3px solid color-blue
 
 a, .link
 	font-weight 500

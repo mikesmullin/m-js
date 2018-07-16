@@ -591,22 +591,6 @@ doc('/guide/welcome/featureset', 'Featureset', `
 - Redux-like state and history features
 `);
 
-doc('/api', 'API', `
-# API
-
-## Cheatsheet
-
-*TODO*: Put an example application.
-
-## Example
-
-~~~js
-"Example goes here";
-~~~
-
-In the meantime, use the navigation menu to the left to get details on each method.
-`);
-
 doc('/api/m/root', 'm.root()', `
 # m.root()
 
@@ -1519,6 +1503,7 @@ const App = {
 			'') + ' | M.js Documentation';
 		Route.rewrite('/', '/guide/welcome/featureset');
 		Route.rewrite('/guide', '/guide/welcome/featureset');
+		Route.rewrite('/api', '/api/m/root');
 		Route.init();
 	}	
 };

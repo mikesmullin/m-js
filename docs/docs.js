@@ -585,7 +585,7 @@ doc('/guide/welcome/featureset', 'Featureset', `
 ### “M.js is a minimalist, modernist, UI component framework for the web.”
 
 - Web component framework
-- Small. <5KB (<2KB gzipped)
+- Small. 6.3KB minified (2.7KB gzipped)
 - High frame rate (fast render)
 - Written in ES6 with ECMAScript Modules
 - Redux-like state and history features

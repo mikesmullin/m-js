@@ -260,7 +260,7 @@ Object Model (or DOM) which, for the purposes of backward compatibility, tends t
 Today, our users are conditioned to expect low latency, hyper responsive animations, transitions, and
 even the use of physics with spring dynamics, collision, and layering effects.
 
-JXML and the Virtual DOM wed perfectly to help us meet modern user demands at high FPS.
+JXML and the [Virtual DOM](/guide/virtual-dom/introduction) wed perfectly to help us meet modern user demands at high FPS.
 
 Continue reading the next chapter to learn more about our version of JXML.
 `);
@@ -622,10 +622,11 @@ In a normal application, this method will be invoked a lot.
 believe this is less confusing for beginners, as it promotes both efficiency
 and control.
 
-If you wanted, you could call it a lot—even from inside a
+You could even call it 60 fps from inside of a
 [requestAnimationFrame()](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame)
 loop (ie. for WebGL animation) because by itself, it is a highly scalable function.
-Still, you should be cognizant of the factors that affect its performance, which include:
+
+But you still need to be cognizant of factors that affect its performance, including:
 - *Number of nodes present in both the DOM and the Virtual DOM.*  
 	If you are trying to render 1 million nodes, you'll need a good strategy to
 	ensure you only need to apply a handful of changes per frame. Still some browsers

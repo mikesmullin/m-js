@@ -250,7 +250,7 @@ Main differences include:
 	[attribute](/guide/vnode/attributes).
 - Support for many variations of [nested children](/guide/vnode/hierarchy).
 
-*NOTE*: The original JXON child hierachy is not supported. Only the above syntax.
+*NOTE*: The original JXON child hierachy is not supported.
 
 ## Background
 

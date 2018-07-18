@@ -1,4 +1,4 @@
-import Utils from './utils.js';
+import * as Utils from './utils.js';
 
 let db = {};
 if (null == window.db) window.db = db; else db = window.db; // hot load

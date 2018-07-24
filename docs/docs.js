@@ -1,6 +1,6 @@
 import Route from '../src/route.js';
 import * as Utils from '../src/utils.js';
-import markdown from './markdown-jxml.js';
+import { markdown } from '../src/extras/markdown-jxml.js';
 
 const _integrate_md = vnode => {
 	if (Utils.has(vnode, 'a', '$href')) { // intercept links

@@ -22,7 +22,7 @@ https://mikesmullin.github.io/m-js/
 ## Added Bonus
 
 - Smallest Markdown parser at <70 lines  
-  https://github.com/mikesmullin/m-js/blob/master/docs/markdown-jxml.js
+  https://github.com/mikesmullin/m-js/blob/master/src/extras/markdown-jxml.js
 
 
 ## License

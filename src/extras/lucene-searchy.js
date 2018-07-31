@@ -1,11 +1,11 @@
-import { is, NA, upper, lower, sum, chunker as t } from '../utils.js';
+import { is, NA, upper, lower, chunker } from '../utils.js';
 
 export class LuceneSyntaxError extends Error {
 	constructor(msg) {
 		super(`Lucene syntax error: ${msg}`);
 	}
 }
-const err = s => { throw new LuceneSyntaxError(s) };
+const err =s=> { throw new LuceneSyntaxError(s); };
 
 /**
  * String parser for Apache Lucene syntax,
@@ -25,77 +25,108 @@ const err = s => { throw new LuceneSyntaxError(s) };
  * @param {String} str - Lucene syntax input
  * @return {Object[]} - Flattened AST tokens in the form `{ u, k, v, b, p } = token;`
  *   where:
- *     {String} k = (optional) Key name.
- *     {String} u = Binary infix comparison operator. (ie. "!=", "==") Default is "==".
- *     {String} v = Value.
- *     {String} b = Binary infix logical operator. (ie. "AND", "OR") Default is "AND".
- *                  This is assumed to be used by joining with the the next token.
- *                  If it is the last token, it is ignored.
- *     {String} p = Surrounding parentheses, delimited by comma. (ie. "(((,))")
+ *	 {String} k = (optional) Key name.
+ *	 {String} u = Binary infix comparison operator. (ie. "!=", "==") Default is "==".
+ *	 {String} v = Value.
+ *	 {String} b = Binary infix logical operator. (ie. "AND", "OR") Default is "AND".
+ *				  This is assumed to be used by joining with the the next token.
+ *				  If it is the last token, it is ignored.
+ *	 {String} p = Surrounding parentheses, delimited by comma. (ie. "(((,))")
  */
 export const lucene = str => {
-	// multi-pass tokenizer
-	// pass 1: building blocks
-	let chunks = t([str], NA,
-		/(?:(NOT)|(AND|OR)|"(?:"|(.{0,}[^\\])")|([a-z0-9_]{1}[a-z0-9_\-\.]{0,99})|(:)|([()]))/ig, m =>
-		is(m[1]) ? [ 'U', upper(m[1]) ] : // unary operator
-		is(m[2]) ? [ 'B', upper(m[2]) ] : // binary operator
-		is(m[3]) ? [ 'S', m[3].replace(/\\"/g, '"') ] : // escaped string
-		is(m[4]) ? [ 'I', m[4]] : // identifier
-		is(m[5]) ? [ 'D' ] : // colon key-value delimiter
-		is(m[6]) ? [ 'P', m[6] ] : // opening or closing parenthesis
-		NA),
-		symbols =()=> chunks.map(c=>c[0]).join(''),
-		bal = 0, P, l;
+	// semantic grammar check
+	if (/NOT\s{0,99}[(]|NOT\s{0,99}[)]|NOT\s{0,99}$/.test(str))
+		err("NOT must appear before values. ie. NOT (a AND b) == (NOT a OR NOT b)");
+	if (/^(?:AND|OR)|[(](?:AND|OR)|(?:AND|OR)[)]|(?:AND|OR)$/.test(str))
+		err("Logical operators (AND OR) must appear between values.");
 
-	// pass 2: reduce tokens 7:5 UBSIDOC>UBKOC
-	t(chunks, symbols(),
-		/(?:U|B|P|(?:(S|I)D)?(S|I))/g, (m,idx) =>
-		is(m[1]) ? [ 'K', chunks[idx(1)][1], chunks[idx(1)+2][1] ] : // key:val
-		is(m[2]) ? [ 'K', NA, chunks[idx(2)][1] ] : // val
+	// begin multi-pass tokenizer
+	// pass 1: building blocks
+	let chunks = chunker([str], NA,
+		/(NOT)\s{1,99}|\s{1,99}(AND|OR)\s{1,99}|"(?:()"|(.{0,}[^\\])")|([a-z0-9_][a-z0-9_\-\.]{0,99})|(:)|([()])/ig, m =>
+		is(m[1]) ? [ 'U', m[1] ] : // unary operator
+		is(m[2]) ? [ 'B', m[2] ] : // binary operator
+		is(m[3]) ? [ 'S', '' ] : // empty string
+		is(m[4]) ? [ 'S', m[4].replace(/\\"/g, '"') ] : // escaped string
+		is(m[5]) ? [ 'I', m[5]] : // identifier
+		is(m[6]) ? [ 'D' ] : // colon key-value delimiter
+		is(m[7]) ? [ {'(':'O',')':'C'}[m[7]], m[7] ] : // opening or closing parenthesis
+		NA),
+		symbols =()=> chunks.map(c=>c[0]).join('');
+
+	// semantic grammar check
+	if (/([SI])D(?:[OC]|$)/.test(symbols())) err("Keys must precede a value.");
+
+	// pass 2: merge identifier and strings into key-value pairs. reduce tokens 6:4 UBSIDP>UBKP
+	chunker(chunks, symbols(),
+		/U|B|O|C|(?:([SI])D)?([SI])/g, (m,sl) =>
+		is(m[1]) ? [ 'K', sl(1)[0][1], sl(1,+2,1)[0][1] ] : // key:val
+		is(m[2]) ? [ 'K', NA, sl(2)[0][1] ] : // val
 		chunks[m.index]);
 
-	// pass 3: semantic grammar check
-	if (/UP/g.test(symbols())) err("NOT must appear right of parentheses. ie. !(a AND b) == (!a OR !b)");
-	// TODO: fix grammar starting with AND
-	if (!/(?:^$|^(?!B)(?:B?P{0,99}U?K{1,}P{0,99}){1,999}$)/g.test(symbols())) err('Incorrect grammar.');
-	// console.log('tokens\n', chunks);
+	// semantic grammar check
+	if (!/^$|^(?!B)(?:B?[OC]{0,99}U?K{1,}[OC]{0,99}){1,999}$/g.test(symbols())) err('Incorrect grammar.');
 
 	// compiler to JSON intermediate representation
-	// pass 4: hierarchy and balanced parens; final reduce of tokens 5:1 UBKOC>X
+	// pass 3: merge UKB into expressions. reduce tokens 4:3 UBKP>OXC
 	// scan to K, eating everything around it, map to X token
-	t(chunks, symbols(), /(P{1,99})?(U)?(K)(P{1,99})?(B)?/g, (m, idx) => (
-		// parenthesis-gathering helper function [used twice below]
-		P=i=>
-			// when parentheses are captured
-			is(m[i]) ? (
-				// take the list of P tokens in the zero-or-more match
-				l = chunks.slice(idx(i), idx(i)+m[i].length),
-				// apply the sum of the matched parentheses to the total balance
-				bal += l.map(c=>'('===c[1]?1:-1).reduce(sum,0),
-				// join the list of original parenthesis characters and return the result. ie. "((()("
-				l.map(c=>c[1]).join('')
-			) : // else, no parens were captured
-			'', // return an empty string (safe for concatenation)
+	chunker(chunks, symbols(),
+		/([OC]{1,99})?(U)?(K)([OC]{1,99})?(B)?/g, (m, sl) => [
+			sl(1),
+			[['X', {
+				k: sl(3)[0][1], // key
+				// lookbehind 1 for U, if found then not equal, otherwise default to is equal
+				u: is(m[2]) ? '!=' : '==', // unary operator
+				v: sl(3)[0][2], // value
+				// lookahead  1 for B, splice into X.b, or default to AND
+				b: is(m[5]) ? sl(5)[0][1] : '', // binary operator. "" means implicit AND
+				p: ',',
+			}]],
+			sl(4),
+		].flat());
 
-		// return an X token
-		{
-			// lookbehind 1 for U, if found then not equal, otherwise default to is equal
-			k: chunks[idx(3)][1], // key
-			u: is(m[2]) ? '!=' : '==', // unary operator
-			v: chunks[idx(3)][2], // value
-			// lookahead  1 for B, splice into X.b, or default to AND
-			b: is(m[5]) ? chunks[idx(5)][1] : 'AND', // binary operator
-			// all parentheses surrounding K
-			p: P(1) +','+ P(4)
-		}));
+	// pass 4: simplify unnecessary grouping + check parentheses balance. reduce tokens 3:1 OXC>X
+	let out = [], lastC = null, P = t => /[OC]/g.test(t[0]) ? t[1] : 0;
+	for (let i=0,
+		balance,
+		// given the index for an occurrence of O, find index of corresponding C
+		findC = i => ( balance = 0,
+			chunks.findIndex((t,s)=>
+				s<i ? 0 : 0===( balance += {'(':1,')':-1,'0':0}[P(t)] ))),
+		chunk,
+		c,
+		stack = out;
+		i < chunks.length;
+		i++
+	) {
+		chunk = chunks[i];
 
-	// grouping parentheses must balance
-	bal < 0 ? err('Forgot opening paren (') :
-	bal > 0 ? err('Forgot closing paren )') : NA;
-	// console.log('final json\n'+JSON.stringify(chunks, null, 2));
-
-	return chunks;
+		if ('('===P(chunk)) {
+			c = findC(i);
+			if ((0===i && c===chunks.length-1) || (is(lastC) && c === lastC-1)) {
+				chunks.splice(c,1);
+				chunks.splice(i,1);
+				lastC = c - 1;
+				i--;
+			}
+			else {
+				stack.push(stack = Object.assign([], { p: stack }));
+				lastC = c;
+			}
+		}
+		else if ('X'===chunk[0]) stack.push(chunk[1]);
+		else if (')'===P(chunk)) {
+			if (is(stack.p) && stack.length>1) {
+				stack[0].p = '('+ stack[0].p;
+				stack[stack.length-1].p += ')';
+			}
+			if (!is(stack.p)) err('Forgot opening paren (');
+			stack.p.splice(-1, 1, ...stack);
+			stack = stack.p;
+		}
+		if (i===chunks.length-1 && is(stack.p)) err('Forgot closing paren )');
+	}
+	return out;
 };
 
 /**
@@ -154,7 +185,7 @@ export const searchy = q => {
 					x.v) ? 1 : 0) +
 				reverseIf([
 					x.p.split(',')[1], // suffix parens
-					(i===(ast.length-1) ? '' : ('OR'===x.b?'||':'&&')), // logical operator
+					(i===(ast.length-1) ? '' : ('OR'===upper(x.b)?'||':'&&')), // logical operator
 				], 1 === x.p.length).join('')).join('') +')';
 
 		// console.debug('record', JSON.stringify(record, null, 2));
@@ -164,18 +195,39 @@ export const searchy = q => {
 	}};
 };
 
-// function to convert lucene AST back into lucene string
-export const tolucene = ast => {
-	const reverseIf = (a,cond) => ((cond && a.reverse()), a);
-	const toString = s => /^[a-z0-9_]{1}[a-z0-9_\-\.]{0,99}$/i.test(s) ? s : `"${s.replace(/"/g,'\\"')}"`;
-	return ast.map((x,i)=>''+
-		x.p.split(',')[0] + // prefix parens
-		// K:V resolved to safe-to-eval boolean literals
-		('!='===x.u ? 'NOT ' : '') +
-		(is(x.k) ? (toString(x.k) +':') : '') +
-		toString(x.v) +
-		reverseIf([
-			x.p.split(',')[1], // suffix parens
-			(i===(ast.length-1) ? '' : ' '+ x.b +' '), // logical operator
-		], 1 === x.p.length).join('')).join('');
+/**
+ * Convert `lucene()` output
+ * back into a string compatible for input.
+ *
+ * @param {String[][]} ast - Abstract syntax tree structure (actually more of a flattened list in this case).
+ * @param {bool} last - (optional) Set false to produce lucene syntax one-expression-at-a-time.
+ *   If not specified, the default is to omit the last boolean, which is normal.
+ *   This is for compliance with an external data structure requirement.
+ * @return String - Lucene-compatible syntax.
+ */
+export const tolucene = (ast, last) => {
+	const reverseIf = (a,cond) =>((cond && a.reverse()), a);
+
+	const toString = s =>
+		null == s ? '' :
+		// identifiers return unquoted string as-is
+		/^[a-z0-9_]{1}[a-z0-9_\-\.]{0,99}$/i.test(s) ? s :
+		// string containing special characters gets quoted and escaped
+		`"${s.replace(/"/g,'\\"')}"`;
+
+	return ast.map((x,i) =>
+			x.p.split(',')[0] + // prefix parens
+			// K:V resolved to safe-to-eval boolean literals
+			('!='===x.u ? 'NOT ' : '') +
+			(is(x.k) ? (toString(x.k) +':') : '') +
+			toString(x.v) +
+			// order of bool AND OR and parenthesis depends on its position
+			reverseIf([
+				x.p.split(',')[1], // suffix parens
+				// logical operator
+				((false !== last && i===(ast.length-1)) ? '' : // last token in list omits its boolean
+				''===x.b.trim() ? ' ' : // implicit AND
+				' '+ x.b +' '), // explicit
+			], 1 === x.p.length).join('')
+	).join('');
 };

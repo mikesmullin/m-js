@@ -19,11 +19,12 @@ https://mikesmullin.github.io/m-js/
 
   https://github.com/mikesmullin/m-js/blob/master/docs/docs.js
 
-## Added Bonus
+## Extras
 
 - Super small Markdown parser at ~1.8KB minified  
   https://github.com/mikesmullin/m-js/blob/master/src/extras/markdown-jxml.js
-
+- Small Lucene parser at ~2KB minified  
+  https://github.com/mikesmullin/m-js/blob/master/src/extras/lucene-searchy.js
 
 ## License
 

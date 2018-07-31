@@ -21,4 +21,12 @@ export default [
 				gzip(),
 		]
 	},
+	{
+		input: 'src/extras/index.js',
+		output: {
+			name: 'm.extras',
+			file: 'dist/m-extras.js',
+			format: 'iife'
+		},
+	},
 ];

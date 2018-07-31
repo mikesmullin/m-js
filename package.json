@@ -2,6 +2,7 @@
   "name": "m",
   "version": "1.0.0",
   "description": "A minimalist, modernist, UI component framework for the web.",
+  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "docs": "nodemon --watch docs/server.js docs/server.js",

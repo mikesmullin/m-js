@@ -151,6 +151,9 @@ export const onReady = cb => {
 	fn(); // kick-start for hot-loading cases
 };
 
+// ex: sortByCols(['name', 'createdAt'], 1);
+export const sortByCols = (k, dir=-1) => (a,b) => (k=> (null==k || get(null,a,k)===get(null,b,k)) ? 0 : get(null,a,k)<=get(null,b,k) ? dir : (dir*-1) )(k.find(_k=>get(null,a,_k)!==get(null,b,_k)));
+export const clamp = (n,min,max) => Math.max(Math.min(n, max), min);
 
 
 // parsers

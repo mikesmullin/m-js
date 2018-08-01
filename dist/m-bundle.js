@@ -54,7 +54,6 @@
 	};
 
 
-
 	// parsers
 	const is = v => null != v;
 	if (!is(Array.prototype.flat)) Array.prototype.flat = function() { return this.reduce((a,v)=>a.concat(v),[]); };

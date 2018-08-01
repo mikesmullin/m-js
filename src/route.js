@@ -18,7 +18,7 @@ const isAbsoluteURI = uri => !/^(?:\w{1,99}:)?\/\//.test(uri);
 const _router = uri => {
 	// find matching route
 	let route;
-	const match = _routeMatches(uri);	
+	const match = _routeMatches(uri);
 	if (null != match) {
 		route = match.route;
 		Route.params = match.params;
@@ -97,10 +97,10 @@ const Route = {
 	},
 
 	// read-only
-	get uri() {	return document.location.hash.substr(1).split('?')[0]; },
+	get uri() { return document.location.hash.substr(1).split('?')[0]; },
 
 	// fetch the title of a given uri
-	getTitleByURI: uri =>	'object' === typeof _routes[uri] ? _routes[uri].title : undefined,	
+	getTitleByURI: uri =>	'object' === typeof _routes[uri] ? _routes[uri].title : undefined,
 };
 
 // register a default route

@@ -29,4 +29,12 @@ export default [
 			format: 'iife'
 		},
 	},
+	{
+		input: 'src/utils.js',
+		output: {
+			name: 'm.Utils',
+			file: 'dist/m-utils.js',
+			format: 'iife'
+		},
+	},
 ];

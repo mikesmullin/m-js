@@ -393,4 +393,13 @@ m.redraw = () => {
 	_redraw();
 };
 
+m.untrusted = v => {
+	if ('string' === typeof v) return v;
+	else if ('number' === typeof v) return ''+v;
+	else {
+		console.error('Malicious value', v);
+		return '';
+	}
+};
+
 export default m;

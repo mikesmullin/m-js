@@ -27,15 +27,32 @@ this.m.Utils = (function (exports) {
 		const r = resolve(o, ...path);
 		return r.o && r.o[r.key] || alt;
 	};
+	const getm = (o, ...path) => get(`MISSING_${path[path.length-1]}`, o, ...path);
 	const set = (val, o, ...path) => {
-		const key = path.pop(), r = resolve(o, ...path);
-		if (r.has) return (undefined === r.key ? r.o : r.o[r.key])[key] = val;
+		if (path.filter(is).length < 1) return o; // no-op
+		let key = path.pop(), c = o, part, i = 0, len = path.length;
+		for (;i<len;i++) {
+			part = path[i];
+			if (null == c[part]) c[part] = 'number' === typeof path[i+1] ? [] : {};
+			c = c[part];
+		}
+		return c[key] = val;
 	};
+	const change = (alt, cb, o, ...path) =>
+		set(cb(get(alt, o, ...path)), o, ...path);
 	const isString = s => 'string' === typeof s;
 	const isStringEmpty = s => null == s || '' === s;
 	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : a + delim + b;
 	const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
-	const map = (a,cb) => null == a ? undefined : Array.isArray(a) ? a.map(cb) : isObject(a) ? Object.keys(a).map(k=>cb(a[k],k)) : a;
+	const not = b => isFunction(b) ? (...args)=>!b(...args) : !b;
+	const map = (a,cb) => {
+		let t;
+		return null == a ? undefined :
+			Array.isArray(a) ? (a.map((v,i) => cb(v,i,i,a.length))) :
+			isObject(a) ? (t=Object.keys(a),t.map((k,i)=>cb(a[k],k,i,t.length))) :
+			a;
+	};
+
 	const data = (()=>{
 		let l, s;
 		const r = el => new Proxy(
@@ -69,6 +86,7 @@ this.m.Utils = (function (exports) {
 			}
 		}
 	};
+	const oneOf = (v,a,b,c,d,e) => v === a || v === b || v === c || v === d || v === e;
 
 	// loader
 	const uid = () => Math.round(performance.now()*100).toString(16);
@@ -101,19 +119,44 @@ this.m.Utils = (function (exports) {
 			else set(value, input, 'value');
 		}
 	};
+	const tr = (k, o) => has(o, k) ? o[k] : o._;
+	const nextTick = cb => setTimeout(cb, 0);
+	const filter = (collection, test) =>
+		Array.isArray(collection) ? collection.filter(test) :
+		isObject(collection) ? Object.keys(collection)
+			.reduce((o,k)=>{ if (test(collection[k])) o[k] = collection[k]; return o; },{}) :
+		test(collection) ? collection :
+		undefined;
+
 	const serializeForm = form =>
 		reduce({}, selectorAll('[name]', form), (acc,input) =>
 			acc[prop(input, null, 'name')] = val(input));
-	const request = (method, url, data) => {
+
+	const request = (state, progressKey, method, url, data, redraw=false) => {
+		set('load', state, progressKey);
+		if (redraw) m.redraw();
 		let ok, fail;
-		const p = new Promise((a,b)=>{ok=a;fail=b;});
+		const p = new Promise((res,rej)=>{
+			ok = value => {
+				set('ok', state, progressKey);
+				fire(res, value);
+				if (redraw) nextTick(m.redraw);
+			};
+			fail = err => {
+				set('fail', state, progressKey);
+				fire(rej, err);
+				if (redraw) nextTick(m.redraw);
+			};
+		});
 		try {
 			const xhr = new XMLHttpRequest();
 			xhr.open(method, url, true);
+			xhr.overrideMimeType('text/plain'); // avoid auto-parsing as xml
 			xhr.onreadystatechange = () => {
 				if (4 !== xhr.readyState) return; // only proceed when request is complete
-				const data = rescue(()=>JSON.parse(xhr.responseText));
-				if (200 === xhr.status) ok(data); else fail(data);
+				const data = JSON.parse(xhr.responseText);
+				if (200 === xhr.status) ok(data);
+				else fail(data);
 			};
 			xhr.setRequestHeader('Content-Type', 'application/json');
 			xhr.send(JSON.stringify(data));
@@ -158,7 +201,8 @@ this.m.Utils = (function (exports) {
 	// ex: sortByCols(['name', 'createdAt'], 1);
 	const sortByCols = (k, dir=-1) => (a,b) => (k=> (null==k || get(null,a,k)===get(null,b,k)) ? 0 : get(null,a,k)<=get(null,b,k) ? dir : (dir*-1) )(k.find(_k=>get(null,a,_k)!==get(null,b,_k)));
 	const clamp = (n,min,max) => Math.max(Math.min(n, max), min);
-
+	const count = o => 'object' === typeof o ? Object.values(o).length : Array.isArray(o) ? o.length : 0;
+	const fire = (fn, ...args) => { if (isFunction(fn)) return fn(...args); };
 
 	// parsers
 	const is = v => null != v;
@@ -293,11 +337,14 @@ this.m.Utils = (function (exports) {
 	exports.resolve = resolve;
 	exports.has = has;
 	exports.get = get;
+	exports.getm = getm;
 	exports.set = set;
+	exports.change = change;
 	exports.isString = isString;
 	exports.isStringEmpty = isStringEmpty;
 	exports.joinStringIfNotEmpty = joinStringIfNotEmpty;
 	exports.isFunction = isFunction;
+	exports.not = not;
 	exports.map = map;
 	exports.data = data;
 	exports.then2 = then2;
@@ -305,6 +352,7 @@ this.m.Utils = (function (exports) {
 	exports.toStringValue = toStringValue;
 	exports.notNullOrEmptyElse = notNullOrEmptyElse;
 	exports.prop = prop;
+	exports.oneOf = oneOf;
 	exports.uid = uid;
 	exports.rescue = rescue;
 	exports.fetchLocal = fetchLocal;
@@ -314,6 +362,9 @@ this.m.Utils = (function (exports) {
 	exports.selectorAll = selectorAll;
 	exports.orEquals = orEquals;
 	exports.val = val;
+	exports.tr = tr;
+	exports.nextTick = nextTick;
+	exports.filter = filter;
 	exports.serializeForm = serializeForm;
 	exports.request = request;
 	exports.rand = rand;
@@ -326,6 +377,8 @@ this.m.Utils = (function (exports) {
 	exports.onReady = onReady;
 	exports.sortByCols = sortByCols;
 	exports.clamp = clamp;
+	exports.count = count;
+	exports.fire = fire;
 	exports.is = is;
 	exports.NA = NA;
 	exports.upper = upper;

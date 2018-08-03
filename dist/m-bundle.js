@@ -21,6 +21,7 @@
 	const isStringEmpty = s => null == s || '' === s;
 	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : a + delim + b;
 	const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
+
 	const data = (()=>{
 		let l, s;
 		const r = el => new Proxy(
@@ -52,7 +53,6 @@
 			}
 		}
 	};
-
 
 	// parsers
 	const is = v => null != v;
@@ -117,7 +117,7 @@
 		if (null == o) return;
 		if (Array.isArray(o)) {
 			for (const child of o)
-				if (m.Component.isComponent(child)) yield child;
+				if (m$1.Component.isComponent(child)) yield child;
 				else for (const _child of VNode.children(child))
 					yield _child;
 		}
@@ -133,7 +133,7 @@
 
 	// m() is basically reduced to an (optional) string parser
 	// use it if it want, or just write the JXML directly to save cycles. your choice.
-	let m = (tag, ...args) => {
+	let m$1 = (tag, ...args) => {
 		const attrs = {}, children = [];
 		for (let i=0,arg; args.length>0; i++) {
 			arg = args.shift();
@@ -149,9 +149,9 @@
 		}
 		return new VNode(tag, attrs, ...children);
 	};
-	if (null == window.m) window.m = m; else m = window.m; // hot load (mostly)
+	if (null == window.m) window.m = m$1; else m$1 = window.m; // hot load (mostly)
 
-	m.Component = class {
+	m$1.Component = class {
 		constructor(_static, attrs, ...children) {
 			this.dom = null;
 			this.static = _static;
@@ -159,8 +159,8 @@
 			this.children = children || [];
 		}
 	};
-	m.Component.isComponent = o =>  isFunction(get(null, o, '$', 'view'));
-	m.Component.instance = (state, o) => { // wrap component in state
+	m$1.Component.isComponent = o =>  isFunction(get(null, o, '$', 'view'));
+	m$1.Component.instance = (state, o) => { // wrap component in state
 		return {
 			state: state,
 			oninit(v) {
@@ -212,12 +212,12 @@
 		'onremove' // after removeChild is invoked
 	]) {
 		const copyOfName = name;
-		m.Component[copyOfName] = (inst, dom) => {
+		m$1.Component[copyOfName] = (inst, dom) => {
 			if (!isFunction(inst.static[copyOfName])) return;
 			if (null != dom) inst.dom = dom;
 			return inst.static[copyOfName](inst);
 		};
-	}m.root = null;
+	}m$1.root = null;
 	const internalAttrs = ['', 'key', 'dirty'];
 	const makeEl = (ns, vTag, v=null) =>
 		null == vTag ? document.createTextNode(v) :
@@ -250,7 +250,7 @@
 			return p; // array of return values
 		};
 		const unwrapInitComponentStack = v => {
-			while (m.Component.isComponent(v)) {
+			while (m$1.Component.isComponent(v)) {
 				const attrs = {}, children = [],
 					itr = VNode.attrs('', v);
 				itr.next().value; // discard tag
@@ -260,14 +260,14 @@
 				for (const child of VNode.children(v)) {
 					children.push(child);
 				}
-				const componentInst = new m.Component(v.$, attrs, ...children);
+				const componentInst = new m$1.Component(v.$, attrs, ...children);
 				componentInstStack.unshift(componentInst); // child-most first
-				if (applyComponentLifeCycle(m.Component.oninit).some(v=>false===v)) {
+				if (applyComponentLifeCycle(m$1.Component.oninit).some(v=>false===v)) {
 					abortRedraw = true;
 					v = null;
 				}
 				else {
-					v = m.Component.view(componentInst); // may return another component
+					v = m$1.Component.view(componentInst); // may return another component
 				}
 			}
 			return v;
@@ -275,11 +275,11 @@
 		const despawn = (stack,cb) => {
 			const old = componentInstStack;
 			componentInstStack = stack;
-			applyComponentLifeCycle(m.Component.onbeforeremove);
+			applyComponentLifeCycle(m$1.Component.onbeforeremove);
 			componentInstStack = old;
 			cb();
 			componentInstStack = stack;
-			applyComponentLifeCycle(m.Component.onremove);
+			applyComponentLifeCycle(m$1.Component.onremove);
 			componentInstStack = old;
 		};
 		const replaceChild = (fn, el) => {
@@ -384,7 +384,7 @@
 			// WARNING: manual dirty requires key. replacement of node or parent will delete key.
 			
 			el = domParent.childNodes[changeIndex];
-			if (false === applyComponentLifeCycle(m.Component.onbeforeupdate)) continue;
+			if (false === applyComponentLifeCycle(m$1.Component.onbeforeupdate)) continue;
 			if (null == data(el).removing) { // target node is waiting for mutation
 
 				let differentComponentInst = [];
@@ -412,8 +412,8 @@
 					applyVirtualDom(el, _v, ns/*, cb*/); // recurse (depth-first traversal)
 					if (abortRedraw) return;
 				}
-				applyComponentLifeCycle(m.Component.oncreate, el);
-				applyComponentLifeCycle(m.Component.onupdate, el);
+				applyComponentLifeCycle(m$1.Component.oncreate, el);
+				applyComponentLifeCycle(m$1.Component.onupdate, el);
 			}
 		}
 		siblingIndex = domParent.childNodes.length;
@@ -427,27 +427,36 @@
 		}
 	};
 	let timer, start, end;
-	m.lastRenderTime = 0; // warn: browser limits reliability to +/-2ms
+	m$1.lastRenderTime = 0; // warn: browser limits reliability to +/-2ms
 	const _redraw = now => {
-		m.renderCount++;
+		m$1.renderCount++;
 		start = performance.now();
 		try {
-			applyVirtualDom(document.body, m.root);
+			applyVirtualDom(document.body, m$1.root);
 		}
 		catch(e) {
 			throw e;
 		}
 		finally {
 			end = performance.now();
-			m.lastRenderTime = end - start;
+			m$1.lastRenderTime = end - start;
 			timer = null;
 		}
 	};
-	m.renderCount = 0;
-	m.redraw = () => {
+	m$1.renderCount = 0;
+	m$1.redraw = () => {
 		if (null != timer) return;
 		timer = 1;
 		_redraw();
+	};
+
+	m$1.untrusted = v => {
+		if ('string' === typeof v) return v;
+		else if ('number' === typeof v) return ''+v;
+		else {
+			console.error('Malicious value', v);
+			return '';
+		}
 	};
 
 }());

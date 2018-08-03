@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "docs": "nodemon --watch docs/server.js docs/server.js",
+    "watch": "nodemon --watch src -e js --exec rollup -- -c",
     "build": "rollup -c"
   },
   "repository": {

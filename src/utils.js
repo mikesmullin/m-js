@@ -23,15 +23,32 @@ export const get = (alt, o, ...path) => {
 	const r = resolve(o, ...path);
 	return r.o && r.o[r.key] || alt;
 };
+export const getm = (o, ...path) => get(`MISSING_${path[path.length-1]}`, o, ...path);
 export const set = (val, o, ...path) => {
-	const key = path.pop(), r = resolve(o, ...path);
-	if (r.has) return (undefined === r.key ? r.o : r.o[r.key])[key] = val;
+	if (path.filter(is).length < 1) return o; // no-op
+	let key = path.pop(), c = o, part, i = 0, len = path.length;
+	for (;i<len;i++) {
+		part = path[i];
+		if (null == c[part]) c[part] = 'number' === typeof path[i+1] ? [] : {};
+		c = c[part];
+	}
+	return c[key] = val;
 };
+export const change = (alt, cb, o, ...path) =>
+	set(cb(get(alt, o, ...path)), o, ...path);
 export const isString = s => 'string' === typeof s;
 export const isStringEmpty = s => null == s || '' === s;
 export const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : a + delim + b;
 export const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
-export const map = (a,cb) => null == a ? undefined : Array.isArray(a) ? a.map(cb) : isObject(a) ? Object.keys(a).map(k=>cb(a[k],k)) : a;
+export const not = b => isFunction(b) ? (...args)=>!b(...args) : !b;
+export const map = (a,cb) => {
+	let t;
+	return null == a ? undefined :
+		Array.isArray(a) ? (a.map((v,i) => cb(v,i,i,a.length))) :
+		isObject(a) ? (t=Object.keys(a),t.map((k,i)=>cb(a[k],k,i,t.length))) :
+		a;
+};
+
 export const data = (()=>{
 	let l, s;
 	const r = el => new Proxy(
@@ -65,6 +82,7 @@ export const prop = function(el, ns, k, v) {
 		}
 	}
 };
+export const oneOf = (v,a,b,c,d,e) => v === a || v === b || v === c || v === d || v === e;
 
 // loader
 export const uid = () => Math.round(performance.now()*100).toString(16);
@@ -97,19 +115,44 @@ export const val = function(input, value) {
 		else set(value, input, 'value');
 	}
 }
+export const tr = (k, o) => has(o, k) ? o[k] : o._;
+export const nextTick = cb => setTimeout(cb, 0);
+export const filter = (collection, test) =>
+	Array.isArray(collection) ? collection.filter(test) :
+	isObject(collection) ? Object.keys(collection)
+		.reduce((o,k)=>{ if (test(collection[k])) o[k] = collection[k]; return o; },{}) :
+	test(collection) ? collection :
+	undefined;
+
 export const serializeForm = form =>
 	reduce({}, selectorAll('[name]', form), (acc,input) =>
 		acc[prop(input, null, 'name')] = val(input));
-export const request = (method, url, data) => {
+
+export const request = (state, progressKey, method, url, data, redraw=false) => {
+	set('load', state, progressKey);
+	if (redraw) m.redraw();
 	let ok, fail;
-	const p = new Promise((a,b)=>{ok=a;fail=b});
+	const p = new Promise((res,rej)=>{
+		ok = value => {
+			set('ok', state, progressKey);
+			fire(res, value);
+			if (redraw) nextTick(m.redraw);
+		};
+		fail = err => {
+			set('fail', state, progressKey);
+			fire(rej, err);
+			if (redraw) nextTick(m.redraw);
+		};
+	});
 	try {
 		const xhr = new XMLHttpRequest();
 		xhr.open(method, url, true);
+		xhr.overrideMimeType('text/plain'); // avoid auto-parsing as xml
 		xhr.onreadystatechange = () => {
 			if (4 !== xhr.readyState) return; // only proceed when request is complete
-			const data = rescue(()=>JSON.parse(xhr.responseText));
-			if (200 === xhr.status) ok(data); else fail(data);
+			const data = JSON.parse(xhr.responseText);
+			if (200 === xhr.status) ok(data);
+			else fail(data);
 		};
 		xhr.setRequestHeader('Content-Type', 'application/json');
 		xhr.send(JSON.stringify(data));
@@ -154,7 +197,8 @@ export const onReady = cb => {
 // ex: sortByCols(['name', 'createdAt'], 1);
 export const sortByCols = (k, dir=-1) => (a,b) => (k=> (null==k || get(null,a,k)===get(null,b,k)) ? 0 : get(null,a,k)<=get(null,b,k) ? dir : (dir*-1) )(k.find(_k=>get(null,a,_k)!==get(null,b,_k)));
 export const clamp = (n,min,max) => Math.max(Math.min(n, max), min);
-
+export const count = o => 'object' === typeof o ? Object.values(o).length : Array.isArray(o) ? o.length : 0;
+export const fire = (fn, ...args) => { if (isFunction(fn)) return fn(...args); };
 
 // parsers
 export const is = v => null != v;

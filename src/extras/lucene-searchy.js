@@ -43,7 +43,7 @@ export const lucene = str => {
 	// begin multi-pass tokenizer
 	// pass 1: building blocks
 	let chunks = chunker([str], NA,
-		/(NOT)\s{1,99}|\s{1,99}(AND|OR)\s{1,99}|"(?:()"|(.{0,}[^\\])")|([a-z0-9_][a-z0-9_\-\.]{0,99})|(:)|([()])/ig, m =>
+		/(NOT)\s{1,99}|\s{1,99}(AND|OR)\s{1,99}|"(?:()"|(.{0,}[^\\])")|([a-z0-9_@][a-z0-9_\-\.@]{0,99})|(:)|([()])/ig, m =>
 		is(m[1]) ? [ 'U', m[1] ] : // unary operator
 		is(m[2]) ? [ 'B', m[2] ] : // binary operator
 		is(m[3]) ? [ 'S', '' ] : // empty string
@@ -211,7 +211,7 @@ export const tolucene = (ast, last) => {
 	const toString = s =>
 		null == s ? '' :
 		// identifiers return unquoted string as-is
-		/^[a-z0-9_]{1}[a-z0-9_\-\.]{0,99}$/i.test(s) ? s :
+		/^[a-z0-9_@]{1}[a-z0-9_\-\.@]{0,99}$/i.test(s) ? s :
 		// string containing special characters gets quoted and escaped
 		`"${s.replace(/"/g,'\\"')}"`;
 

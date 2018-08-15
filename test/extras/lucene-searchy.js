@@ -67,6 +67,7 @@ describe('lucene-searchy.js', () => {
 		it('39', () => test('(b AND)', 'Logical operators (AND OR) must appear between values.'));
 		it('40', () => test('b AND', 'Logical operators (AND OR) must appear between values.'));
 		it('41', () => test('a:b OR NOT @timestamp:d', 'a:b OR NOT @timestamp:d'));
+		it('42', () => test('"service":"ec2.amazonaws.com" "region":"us-east-1"', 'service:ec2.amazonaws.com region:us-east-1'));
 	});
 
 	describe('searchy()', () => {

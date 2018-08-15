@@ -81,7 +81,7 @@ describe('lucene-searchy.js', () => {
 			let query, ast, output;
 			try {
 				query = searchy(input);
-				output = query.test(record);
+				output = query.matchObject(record);
 				assert.equal(output, !!expected);
 			}
 			catch(e) {

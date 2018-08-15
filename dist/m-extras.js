@@ -279,7 +279,7 @@ this.m.extras = (function (exports) {
 		const ast = lucene(q),
 			reverseIf = (a,cond) => ((cond && a.reverse()), a),
 			toString = s => is(s) ? ''+s : '';
-		return { test(record) {
+		return { matchObject(record) {
 			// NOTICE: assumes user is passing result of `JSON.flatten(record)`.
 			// build index and search functions
 			let keys = [],
@@ -300,7 +300,7 @@ this.m.extras = (function (exports) {
 					return acc;
 				}, {}),
 				// NOTICE: key:values always match wildcard like *KEY*:*VALUE*
-				matchValue = (haystack,needle)/*:bool*/ => -1!==haystack.search(needle),
+				matchValue = (haystack,needle)/*:bool*/ => -1!==haystack.indexOf(needle),
 				matchAnyValue = (v) => values.some(haystack=>matchValue(haystack,v)),
 				matchKeyValue = (K, cmp, V)/*:bool*/ => {
 					let v = lower(''+V);

@@ -33,7 +33,7 @@ const W = (cond,k,o) => cond ? { [k]: o } : o, // wrap
  *   Primarily used internally by recursion.
  * @return {Object} - JXML.
  */
-const markdown = (str, integrate=o=>o, inlineOnly=false) => {
+export const markdown = (str, integrate=o=>o, inlineOnly=false) => {
 	// multi-pass tokenizer
 	// pass 1: inline-block elements (code, paragraph delim)
 	let chunks = t([str], NA,
@@ -96,5 +96,3 @@ const markdown = (str, integrate=o=>o, inlineOnly=false) => {
 			NA;
 		}));
 };
-
-export default markdown;

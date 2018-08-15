@@ -1,5 +1,4 @@
-this.m = this.m || {};
-this.m.Utils = (function (exports) {
+var Utils = (function (exports) {
 	'use strict';
 
 	// m, etc.

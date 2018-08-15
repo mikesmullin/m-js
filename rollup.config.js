@@ -24,7 +24,7 @@ export default [
 	{
 		input: 'src/extras/index.js',
 		output: {
-			name: 'm.extras',
+			name: 'extras',
 			file: 'dist/m-extras.js',
 			format: 'iife'
 		},
@@ -32,7 +32,7 @@ export default [
 	{
 		input: 'src/utils.js',
 		output: {
-			name: 'm.Utils',
+			name: 'Utils',
 			file: 'dist/m-utils.js',
 			format: 'iife'
 		},

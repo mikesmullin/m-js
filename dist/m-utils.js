@@ -1,5 +1,8 @@
-var Utils = (function (exports) {
-	'use strict';
+(function (global, factory) {
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
+	typeof define === 'function' && define.amd ? define(['exports'], factory) :
+	(factory((global.Utils = {})));
+}(this, (function (exports) { 'use strict';
 
 	// m, etc.
 	const isEmptyArray = a => Array.isArray(a) && a.length < 1;
@@ -387,6 +390,6 @@ var Utils = (function (exports) {
 	exports.isA = isA;
 	exports.chunker = chunker;
 
-	return exports;
+	Object.defineProperty(exports, '__esModule', { value: true });
 
-}({}));
+})));

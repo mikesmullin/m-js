@@ -26,7 +26,7 @@ export default [
 		output: {
 			name: 'extras',
 			file: 'dist/m-extras.js',
-			format: 'iife'
+			format: 'umd'
 		},
 	},
 	{
@@ -34,7 +34,7 @@ export default [
 		output: {
 			name: 'Utils',
 			file: 'dist/m-utils.js',
-			format: 'iife'
+			format: 'umd'
 		},
 	},
 ];

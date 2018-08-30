@@ -65,28 +65,28 @@
 	 */
 	const chunker = (chunks, symbols, rx, matchCb, betweenCb) => {
 		const r = [], _chunks = is(symbols) ? [symbols] : chunks;
-	    let i=0,
-	        chunk,
-	        lastSlice,
-	        match,
-	        token,
+		let i=0,
+			chunk,
+			lastSlice,
+			match,
+			token,
 
-	        pushToken = t => t ?
-	            (isA(t) && !isS(t[0])) ?
-	                t.forEach(t=>t && r.push(t)) :
-	                r.push(t) :
-	            NA,
+			pushToken = t => t ?
+				(isA(t) && !isS(t[0])) ?
+					t.forEach(t=>t && r.push(t)) :
+					r.push(t) :
+				NA,
 
-	        textSlice,
-	        pushExtra = i =>
-	            is(betweenCb) && // if cb defined
+			textSlice,
+			pushExtra = i =>
+				is(betweenCb) && // if cb defined
 				(textSlice = chunk.substring(lastSlice, i)) && // perform slice from last slice to given index
 				textSlice.length > 0 && // if text slice is not empty
 				pushToken( // push it as a new token
 					betweenCb(textSlice, lastSlice, i)), // but first give betweenCb a chance to format it
 
-	        mapSymbolIdxChunkIdx,
-	        sliceChunks;
+			mapSymbolIdxChunkIdx,
+			sliceChunks;
 		for (;
 			i < _chunks.length;
 			i++
@@ -111,10 +111,10 @@
 						chunks.slice(
 							mapSymbolIdxChunkIdx(symbolIndex) + chunkOffset,
 							mapSymbolIdxChunkIdx(symbolIndex) + chunkOffset + (is(chunkSliceLen) ?
-								chunkSliceLen :
-								is(match[symbolIndex]) ?
-									match[symbolIndex].length :
-									1));
+							chunkSliceLen :
+							is(match[symbolIndex]) ?
+								match[symbolIndex].length :
+								1));
 
 				// invoke callback to map match => token
 				token = matchCb(match, is(symbols) && sliceChunks);
@@ -340,13 +340,14 @@
 	 * back into a string compatible for input.
 	 *
 	 * @param {String[][]} ast - Abstract syntax tree structure (actually more of a flattened list in this case).
-	 * @param {bool} last - (optional) Set false to produce lucene syntax one-expression-at-a-time.
+	 * @param {boolean} last - (optional) Set false to produce lucene syntax one-expression-at-a-time.
 	 *   If not specified, the default is to omit the last boolean, which is normal.
 	 *   This is for compliance with an external data structure requirement.
 	 * @return String - Lucene-compatible syntax.
 	 */
 	const tolucene = (ast, last) => {
 		const reverseIf = (a,cond) =>((cond && a.reverse()), a);
+		const get$$1 = (alt,o,k) => (null != o && null != o[k]) ? o[k] : alt;
 
 		const toString = s =>
 			null == s ? '' :
@@ -355,21 +356,22 @@
 			// string containing special characters gets quoted and escaped
 			`"${s.replace(/"/g,'\\"')}"`;
 
-		return ast.map((x,i) =>
-				x.p.split(',')[0] + // prefix parens
+		return ast.map((x,i) => {
+			if (null == x) return '';
+			return get$$1('',x,'p').split(',')[0] + // prefix parens
 				// K:V resolved to safe-to-eval boolean literals
 				('!='===x.u ? 'NOT ' : '') +
 				(is(x.k) ? (toString(x.k) +':') : '') +
 				toString(x.v) +
 				// order of bool AND OR and parenthesis depends on its position
 				reverseIf([
-					x.p.split(',')[1], // suffix parens
+					get$$1([],x,'p').split(',')[1], // suffix parens
 					// logical operator
 					((false !== last && i===(ast.length-1)) ? '' : // last token in list omits its boolean
-					''===x.b.trim() ? ' ' : // implicit AND
+					''===get$$1('',x,'b').trim() ? ' ' : // implicit AND
 					' '+ x.b +' '), // explicit
-				], 1 === x.p.length).join('')
-		).join('');
+				], 1 === get$$1([], x, 'p').length).join('');
+		}).join('');
 	};
 
 	const W = (cond,k,o) => cond ? { [k]: o } : o, // wrap

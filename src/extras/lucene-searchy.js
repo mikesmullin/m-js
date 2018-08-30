@@ -1,4 +1,5 @@
-import { is, NA, upper, lower, chunker } from '../utils.js';
+import { is, NA, upper, lower } from '../utils.js';
+import { chunker } from './chunker.js';
 
 export class LuceneSyntaxError extends Error {
 	constructor(msg) {
@@ -200,13 +201,14 @@ export const searchy = q => {
  * back into a string compatible for input.
  *
  * @param {String[][]} ast - Abstract syntax tree structure (actually more of a flattened list in this case).
- * @param {bool} last - (optional) Set false to produce lucene syntax one-expression-at-a-time.
+ * @param {boolean} last - (optional) Set false to produce lucene syntax one-expression-at-a-time.
  *   If not specified, the default is to omit the last boolean, which is normal.
  *   This is for compliance with an external data structure requirement.
  * @return String - Lucene-compatible syntax.
  */
 export const tolucene = (ast, last) => {
 	const reverseIf = (a,cond) =>((cond && a.reverse()), a);
+	const get = (alt,o,k) => (null != o && null != o[k]) ? o[k] : alt;
 
 	const toString = s =>
 		null == s ? '' :
@@ -215,19 +217,20 @@ export const tolucene = (ast, last) => {
 		// string containing special characters gets quoted and escaped
 		`"${s.replace(/"/g,'\\"')}"`;
 
-	return ast.map((x,i) =>
-			x.p.split(',')[0] + // prefix parens
+	return ast.map((x,i) => {
+		if (null == x) return '';
+		return get('',x,'p').split(',')[0] + // prefix parens
 			// K:V resolved to safe-to-eval boolean literals
 			('!='===x.u ? 'NOT ' : '') +
 			(is(x.k) ? (toString(x.k) +':') : '') +
 			toString(x.v) +
 			// order of bool AND OR and parenthesis depends on its position
 			reverseIf([
-				x.p.split(',')[1], // suffix parens
+				get([],x,'p').split(',')[1], // suffix parens
 				// logical operator
 				((false !== last && i===(ast.length-1)) ? '' : // last token in list omits its boolean
-				''===x.b.trim() ? ' ' : // implicit AND
+				''===get('',x,'b').trim() ? ' ' : // implicit AND
 				' '+ x.b +' '), // explicit
-			], 1 === x.p.length).join('')
-	).join('');
+			], 1 === get([], x, 'p').length).join('');
+	}).join('');
 };

@@ -1,4 +1,5 @@
-import { is, NA, chunker as t } from '../utils.js';
+import { is, NA, } from '../utils.js';
+import { chunker as t } from './chunker.js';
 
 const W = (cond,k,o) => cond ? { [k]: o } : o, // wrap
 	S = a => 1 === a.length ? a[0] : a, // simplify

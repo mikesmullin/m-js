@@ -208,4 +208,7 @@ export const lower = s => s.toLowerCase();
 export const sum = (sum, i) => sum+i;
 export const isS = isString;
 export const isA = a => Array.isArray(a);
-if (!is(Array.prototype.flat)) Array.prototype.flat = function() { return this.reduce((a,v)=>a.concat(v),[]); };
+Array.prototype.flat || Object.defineProperty(Array.prototype, 'flat', { // es6 shim
+	enumerable: false,
+	value: function() { return this.reduce((a,v)=>a.concat(v),[]); },
+});

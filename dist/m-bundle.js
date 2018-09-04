@@ -53,10 +53,10 @@
 			}
 		}
 	};
-
-	// parsers
-	const is = v => null != v;
-	if (!is(Array.prototype.flat)) Array.prototype.flat = function() { return this.reduce((a,v)=>a.concat(v),[]); };
+	Array.prototype.flat || Object.defineProperty(Array.prototype, 'flat', { // es6 shim
+		enumerable: false,
+		value: function() { return this.reduce((a,v)=>a.concat(v),[]); },
+	});
 
 	// VNode is basically composable branches and traversal
 	const eachTag = function*(o) {

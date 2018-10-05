@@ -19,7 +19,7 @@
 		return r.o && r.o[r.key] || alt;
 	};
 	const isStringEmpty = s => null == s || '' === s;
-	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : a + delim + b;
+	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : isStringEmpty(b) ? a : a + delim + b;
 	const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
 
 	const data = (()=>{

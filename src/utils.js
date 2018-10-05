@@ -38,7 +38,7 @@ export const change = (alt, cb, o, ...path) =>
 	set(cb(get(alt, o, ...path)), o, ...path);
 export const isString = s => 'string' === typeof s;
 export const isStringEmpty = s => null == s || '' === s;
-export const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : a + delim + b;
+export const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : isStringEmpty(b) ? a : a + delim + b;
 export const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
 export const not = b => isFunction(b) ? (...args)=>!b(...args) : !b;
 export const map = (a,cb) => {

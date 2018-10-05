@@ -44,7 +44,7 @@
 		set(cb(get(alt, o, ...path)), o, ...path);
 	const isString = s => 'string' === typeof s;
 	const isStringEmpty = s => null == s || '' === s;
-	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : a + delim + b;
+	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : isStringEmpty(b) ? a : a + delim + b;
 	const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
 	const not = b => isFunction(b) ? (...args)=>!b(...args) : !b;
 	const map = (a,cb) => {

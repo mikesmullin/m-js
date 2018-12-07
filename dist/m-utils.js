@@ -44,7 +44,7 @@
 		set(cb(get(alt, o, ...path)), o, ...path);
 	const isString = s => 'string' === typeof s;
 	const isStringEmpty = s => null == s || '' === s;
-	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : isStringEmpty(b) ? a : a + delim + b;
+	const joinUnlessEmpty = (delim, ...args) => args.filter(not(isStringEmpty)).join(delim);
 	const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
 	const not = b => isFunction(b) ? (...args)=>!b(...args) : !b;
 	const map = (a,cb) => {
@@ -121,7 +121,7 @@
 			else set(value, input, 'value');
 		}
 	};
-	const tr = (k, o) => has(o, k) ? o[k] : o._;
+	const tr = (k, o) => null == o ? undefined : has(o, k) ? o[k] : o._;
 	const nextTick = cb => setTimeout(cb, 0);
 	const filter = (collection, test) =>
 		Array.isArray(collection) ? collection.filter(test) :
@@ -133,41 +133,64 @@
 	const serializeForm = form =>
 		reduce({}, selectorAll('[name]', form), (acc,input) =>
 			acc[prop(input, null, 'name')] = val(input));
+	const getFormData = (form) => {
+		// emulate behavior of application/x-www-form-urlencoded
+		// which turns multiple form fields by the same name into an array
+		const data = serializeForm(form);
+		const input = {};
+		for (const name of Object.keys(data)) {
+			const value = data[name];
+			const _name = name.replace(/\[\]$/, '');
+			if (_.has(input, _name)) {
+				if (!Array.isArray(_.get(input, _name))) {
+					_.set(input, _name, [_.get(input, _name)]);
+				}
+				_.get(input, _name).push(value);
+			}
+			else _.set(input, _name, value);
+		}
+		return input;
+	};
 
-	const request = (state, progressKey, method, url, data, redraw=false) => {
-		set('load', state, progressKey);
-		if (redraw) m.redraw();
-		let ok, fail;
-		const p = new Promise((res,rej)=>{
-			ok = value => {
-				set('ok', state, progressKey);
-				fire(res, value);
-				if (redraw) nextTick(m.redraw);
-			};
-			fail = err => {
-				set('fail', state, progressKey);
-				fire(rej, err);
-				if (redraw) nextTick(m.redraw);
-			};
-		});
+	const request = (cancel, state, key, method, url, data) => new Promise((ok, fail) => {
 		try {
+			// if a former request is in progress under the same namespace, abort it
+			// prior to starting a new one (ie. to bypass server timeouts)
+			const formerXhr = get(null, state, key, 'xhr');
+			if (cancel && null != formerXhr) {
+				fire(formerXhr.abort.bind(formerXhr));
+				delete state[key];
+			}
+
 			const xhr = new XMLHttpRequest();
+			state[key] = { state: 'load', xhr: xhr };
 			xhr.open(method, url, true);
 			xhr.overrideMimeType('text/plain'); // avoid auto-parsing as xml
 			xhr.onreadystatechange = () => {
-				if (4 !== xhr.readyState) return; // only proceed when request is complete
+				if (4 !== xhr.readyState || 0 === xhr.status) return; // only proceed when request is complete
 				const data = JSON.parse(xhr.responseText);
-				if (200 === xhr.status) ok(data);
-				else fail(data);
+				if (200 === xhr.status) {
+					set('ok', state, key, 'state');
+					ok(data);
+				}
+				else {
+					set('fail', state, key, 'state');
+					fail(data);
+				}
 			};
 			xhr.setRequestHeader('Content-Type', 'application/json');
+			for (const key of Object.keys(request.headers)) {
+				xhr.setRequestHeader(key, request.headers[key]);
+			}
 			xhr.send(JSON.stringify(data));
 		}
 		catch(e) {
+			set('fail', state, key, 'state');
 			fail(e);
 		}
-		return p;
-	};
+	});
+	request.headers = {};
+
 	const rand = (min,max) => Math.floor(Math.random() * (max - min + 1) ) + min;
 	const select = a => a[rand(0, a.length-1)];
 	const delay = ms => new Promise(ok=>setTimeout(ok, ms));
@@ -178,6 +201,7 @@
 		cb(...args, e);
 		return false;
 	};
+	const stopEvent = cb => e => { if (cb && true === cb(e)) return; e.stopPropagation(); };
 	const throttle = (ms,cb) => { // leading: false, trailing: true
 		let timer;
 		return (...args) => {
@@ -201,10 +225,71 @@
 	};
 
 	// ex: sortByCols(['name', 'createdAt'], 1);
+	const push = (v, o, ...k) => {
+		let a = get([], o, ...k);
+		if (!Array.isArray(a)) set(a = [], o, ...k);
+		a.push(v);
+	};
+	const sortBy = (k,dir=-1) => (a,b) => k(a)<k(b) ? dir : k(a)>k(b) ? (dir*-1) : 0;
+	const sortByCb = (cb, dir=-1) => (a,b) => cb(a)<cb(b) ? dir : cb(a)>cb(b) ? (dir*-1) : 0;
 	const sortByCols = (k, dir=-1) => (a,b) => (k=> (null==k || get(null,a,k)===get(null,b,k)) ? 0 : get(null,a,k)<=get(null,b,k) ? dir : (dir*-1) )(k.find(_k=>get(null,a,_k)!==get(null,b,_k)));
 	const clamp = (n,min,max) => Math.max(Math.min(n, max), min);
 	const count = o => 'object' === typeof o ? Object.values(o).length : Array.isArray(o) ? o.length : 0;
 	const fire = (fn, ...args) => { if (isFunction(fn)) return fn(...args); };
+	const id = s => null == s ? undefined : s.replace(/[^a-z0-9]{1,999}/ig, '-').replace(/(^-{1,999}|-{1,999}$)/g, '');
+
+	const pluralize = (n,plural,singular) => 1===n ? singular : plural;
+	const titleize = s => ('_'+s).replace(/([A-Z])/,'_$1').replace(/_[a-z]/gi, s=>s.toUpperCase()).replace(/_{1,9}/g, ' ').trim();
+	const confirmPageUnload = (testDirty, msg='Any unsaved changes will be lost.') => {
+		const listener = e => {
+			if (!fire(testDirty)) return; // abort if no changes
+			(e || window.event).returnValue = msg; // Gecko + IE
+			return msg; // Gecko + Webkit, Safari, Chrome etc.
+		};
+		window.addEventListener('beforeunload', listener);
+		return listener;
+	};
+	const unconfirmPageUnload = listener =>
+		window.removeEventListener('beforeunload', listener);
+	const findInclSelf = (_selector, parent) => parent.matches(_selector) ? parent : selector(_selector, parent);
+	const between = (i, a, b) =>
+		(i == null || null == a || null == b) ? false :
+			Math.min(a,b) === a ? i >= a && i <= b : i >= b && i <= a;
+	const alphaNumeric = s => s.replace(/[^a-zA-Z0-9]/g, '');
+	const prefixIfNotEmpty = (prefix, s) => null == s ? '' : prefix + s;
+	const reduceObject = (o,cb) => {
+		const r = {};
+		if (null != o) {
+			for (const key of Object.keys(o)) {
+				cb(r, key, o[key]);
+			}
+		}
+		return r;
+	};
+	const concatJoin = (a,delim,b) => (null != a) ? a+delim+b : b;
+	const repeat = (n,cb) => new Array(n).fill(0).map((_,i) => cb(i));
+	const isArrayLikeEmpty = a => null == a || a.length < 1;
+	const includes = (a,v) => null == a ? false : a.includes(v);
+	const walk = (o, test, cb) => map(o, (v, k, i, len) => test(v) && cb(v, k, i, len));
+	const prefixIfLength = (pre, list) => null == list || list.length < 1 ? null : [pre, ...list];
+	const containIfLength = (containerCb, list) => null == list || list.length < 1 ? null : containerCb(list);
+	const containIf = (test, containerCb, list) => !test ? list : containerCb(list);
+	const sortObject = (o,sortFn) => {
+		// sort the object by key (possible since es6)
+		let t;
+		for (const key of Object.keys(o).sort(sortFn)) {
+			// reassignment will move key to end
+			t = o[key];
+			delete o[key];
+			o[key] = t;
+			// eventually all keys will be moved to end
+			// and this will happen in sorted key order
+		}
+		return o;
+	};
+	const cmpArrayUnordered = (a, b) => {
+		return a.length === b.length && a.every(v=>b.includes(v));
+	};
 
 	// parsers
 	const is = v => null != v;
@@ -218,6 +303,51 @@
 		enumerable: false,
 		value: function() { return this.reduce((a,v)=>a.concat(v),[]); },
 	});
+
+
+	// animation
+	const animate = (e, cls) => {
+		if (null == e) return;
+		vendorAddEventListener(e, 'animationend', () => {
+			e.classList.remove(cls);
+		});
+		e.classList.add(cls);
+	};
+
+	const VENDOR_EVENT_MAP = {
+		'animationend': ['animationend', 'mozAnimationEnd', 'webkitAnimationEnd'],
+	};
+	const vendorAddEventListener = (e, event, fn) => {
+		for (const variation of VENDOR_EVENT_MAP[event]) {
+			e.addEventListener(variation, fn);
+		}
+	};
+	const vendorRemoveEventListener = (e, event, fn) => {
+		for (const variation of VENDOR_EVENT_MAP[event]) {
+			e.removeEventListener(variation, fn);
+		}
+	};
+
+	// first one is immediate, thereafter delayed until interval has passed
+	const cooldown = (trip, ms1, ms2, fn) => {
+		let fire, coolDown;
+		return (...args) => {
+			trip();
+			fire = () => {
+				fn(...args);
+				fire = null;
+			};
+			if (null != coolDown) {
+				clearTimeout(coolDown); // restart timeout
+				coolDown = null;
+			}
+			// start cooldown
+			coolDown = setTimeout(() => {
+				coolDown = null;
+				if (null != fire) fire();
+			}, null == coolDown ? ms1 : ms2);
+		}
+	};
 
 	exports.isEmptyArray = isEmptyArray;
 	exports.isObject = isObject;
@@ -236,7 +366,7 @@
 	exports.change = change;
 	exports.isString = isString;
 	exports.isStringEmpty = isStringEmpty;
-	exports.joinStringIfNotEmpty = joinStringIfNotEmpty;
+	exports.joinUnlessEmpty = joinUnlessEmpty;
 	exports.isFunction = isFunction;
 	exports.not = not;
 	exports.map = map;
@@ -260,19 +390,44 @@
 	exports.nextTick = nextTick;
 	exports.filter = filter;
 	exports.serializeForm = serializeForm;
+	exports.getFormData = getFormData;
 	exports.request = request;
 	exports.rand = rand;
 	exports.select = select;
 	exports.delay = delay;
 	exports.trapEvent = trapEvent;
+	exports.stopEvent = stopEvent;
 	exports.throttle = throttle;
 	exports.trigger = trigger;
 	exports.activeIf = activeIf;
 	exports.onReady = onReady;
+	exports.push = push;
+	exports.sortBy = sortBy;
+	exports.sortByCb = sortByCb;
 	exports.sortByCols = sortByCols;
 	exports.clamp = clamp;
 	exports.count = count;
 	exports.fire = fire;
+	exports.id = id;
+	exports.pluralize = pluralize;
+	exports.titleize = titleize;
+	exports.confirmPageUnload = confirmPageUnload;
+	exports.unconfirmPageUnload = unconfirmPageUnload;
+	exports.findInclSelf = findInclSelf;
+	exports.between = between;
+	exports.alphaNumeric = alphaNumeric;
+	exports.prefixIfNotEmpty = prefixIfNotEmpty;
+	exports.reduceObject = reduceObject;
+	exports.concatJoin = concatJoin;
+	exports.repeat = repeat;
+	exports.isArrayLikeEmpty = isArrayLikeEmpty;
+	exports.includes = includes;
+	exports.walk = walk;
+	exports.prefixIfLength = prefixIfLength;
+	exports.containIfLength = containIfLength;
+	exports.containIf = containIf;
+	exports.sortObject = sortObject;
+	exports.cmpArrayUnordered = cmpArrayUnordered;
 	exports.is = is;
 	exports.NA = NA;
 	exports.upper = upper;
@@ -280,6 +435,10 @@
 	exports.sum = sum;
 	exports.isS = isS;
 	exports.isA = isA;
+	exports.animate = animate;
+	exports.vendorAddEventListener = vendorAddEventListener;
+	exports.vendorRemoveEventListener = vendorRemoveEventListener;
+	exports.cooldown = cooldown;
 
 	Object.defineProperty(exports, '__esModule', { value: true });
 

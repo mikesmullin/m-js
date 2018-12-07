@@ -19,8 +19,9 @@
 		return r.o && r.o[r.key] || alt;
 	};
 	const isStringEmpty = s => null == s || '' === s;
-	const joinStringIfNotEmpty = (a,delim,b) => isStringEmpty(a) ? b : isStringEmpty(b) ? a : a + delim + b;
+	const joinUnlessEmpty = (delim, ...args) => args.filter(not(isStringEmpty)).join(delim);
 	const isFunction = (fn,paramCount) => 'function' === typeof fn && (null == paramCount || fn.length === paramCount);
+	const not = b => isFunction(b) ? (...args)=>!b(...args) : !b;
 
 	const data = (()=>{
 		let l, s;
@@ -85,11 +86,11 @@
 	VNode.attrs = function*(tag, o) {
 		const attrs = {};
 		tag = tag.replace(RX_ATTRS, (...args) => {
-			const [/*match*/, id, cls, attrName, /*quot*/, attrValue, /*offset*/, /*str*/] = args;
-			if (null != id)
-				attrs.id = id; // last wins
+			const [/*match*/, id$$1, cls, attrName, /*quot*/, attrValue, /*offset*/, /*str*/] = args;
+			if (null != id$$1)
+				attrs.id = id$$1; // last wins
 			else if ('string' === typeof cls && '' !== cls.trim()) {
-				attrs.class = joinStringIfNotEmpty(attrs.class, ' ', cls); // append space-delimited
+				attrs.class = joinUnlessEmpty(' ', attrs.class, cls); // append space-delimited
 			}
 			else if (null != attrName)
 				attrs[attrName] = undefined === attrValue ? null : attrValue; // merge object
@@ -101,7 +102,7 @@
 			for (let k in o)
 				if ('$class' === k) {
 					if ('string' === typeof o.$class && '' !== o.$class.trim()) {
-						attrs.class = joinStringIfNotEmpty(attrs.class, ' ', o.$class);
+						attrs.class = joinUnlessEmpty(' ', attrs.class, o.$class);
 					}
 				} else if ('$'===k[0] && k.length > 1)
 					attrs[k.substr(1)] = o[k];
@@ -117,7 +118,7 @@
 		if (null == o) return;
 		if (Array.isArray(o)) {
 			for (const child of o)
-				if (m$1.Component.isComponent(child)) yield child;
+				if (m.Component.isComponent(child)) yield child;
 				else for (const _child of VNode.children(child))
 					yield _child;
 		}
@@ -133,7 +134,7 @@
 
 	// m() is basically reduced to an (optional) string parser
 	// use it if it want, or just write the JXML directly to save cycles. your choice.
-	let m$1 = (tag, ...args) => {
+	let m = (tag, ...args) => {
 		const attrs = {}, children = [];
 		for (let i=0,arg; args.length>0; i++) {
 			arg = args.shift();
@@ -149,9 +150,9 @@
 		}
 		return new VNode(tag, attrs, ...children);
 	};
-	if (null == window.m) window.m = m$1; else m$1 = window.m; // hot load (mostly)
+	if (null == window.m) window.m = m; else m = window.m; // hot load (mostly)
 
-	m$1.Component = class {
+	m.Component = class {
 		constructor(_static, attrs, ...children) {
 			this.dom = null;
 			this.static = _static;
@@ -159,8 +160,8 @@
 			this.children = children || [];
 		}
 	};
-	m$1.Component.isComponent = o =>  isFunction(get(null, o, '$', 'view'));
-	m$1.Component.instance = (state, o) => { // wrap component in state
+	m.Component.isComponent = o =>  isFunction(get(null, o, '$', 'view'));
+	m.instance = (state, o) => { // wrap component in state
 		return {
 			state: state,
 			oninit(v) {
@@ -212,12 +213,12 @@
 		'onremove' // after removeChild is invoked
 	]) {
 		const copyOfName = name;
-		m$1.Component[copyOfName] = (inst, dom) => {
+		m.Component[copyOfName] = (inst, dom) => {
 			if (!isFunction(inst.static[copyOfName])) return;
 			if (null != dom) inst.dom = dom;
 			return inst.static[copyOfName](inst);
 		};
-	}m$1.root = null;
+	}m.root = null;
 	const internalAttrs = ['', 'key', 'dirty'];
 	const makeEl = (ns, vTag, v=null) =>
 		null == vTag ? document.createTextNode(v) :
@@ -233,7 +234,7 @@
 	const xforms = { insertBefore: 0, appendChild:  1, recycleChild: 2, removeChild: 3 };
 	let abortRedraw;
 	// basically graph theory: walk tree, apply graph transforms, where DOM == DAG
-	const applyVirtualDom = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
+	m.render = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
 		let el, v, _v, vKey, vTag, attrsItr, attr, componentInstStack = [],
 		siblingIndex, changeIndex, foundKey, passover = new Set([]), i = -1;
 		abortRedraw = false;
@@ -245,12 +246,12 @@
 				// notice: component lifecycle methods may return undefined or a Promise,
 				//   which will stall the update but only for a particular component branch.
 				//   its like dirty = false, but it can apply to indexed siblings too,
-				//   as long as they dont move.
+				//   as long as they don't move.
 			}
 			return p; // array of return values
 		};
 		const unwrapInitComponentStack = v => {
-			while (m$1.Component.isComponent(v)) {
+			while (m.Component.isComponent(v)) {
 				const attrs = {}, children = [],
 					itr = VNode.attrs('', v);
 				itr.next().value; // discard tag
@@ -260,14 +261,14 @@
 				for (const child of VNode.children(v)) {
 					children.push(child);
 				}
-				const componentInst = new m$1.Component(v.$, attrs, ...children);
+				const componentInst = new m.Component(v.$, attrs, ...children);
 				componentInstStack.unshift(componentInst); // child-most first
-				if (applyComponentLifeCycle(m$1.Component.oninit).some(v=>false===v)) {
+				if (applyComponentLifeCycle(m.Component.oninit).some(v=>false===v)) {
 					abortRedraw = true;
 					v = null;
 				}
 				else {
-					v = m$1.Component.view(componentInst); // may return another component
+					v = m.Component.view(componentInst); // may return another component
 				}
 			}
 			return v;
@@ -275,11 +276,11 @@
 		const despawn = (stack,cb) => {
 			const old = componentInstStack;
 			componentInstStack = stack;
-			applyComponentLifeCycle(m$1.Component.onbeforeremove);
+			applyComponentLifeCycle(m.Component.onbeforeremove);
 			componentInstStack = old;
 			cb();
 			componentInstStack = stack;
-			applyComponentLifeCycle(m$1.Component.onremove);
+			applyComponentLifeCycle(m.Component.onremove);
 			componentInstStack = old;
 		};
 		const replaceChild = (fn, el) => {
@@ -384,7 +385,7 @@
 			// WARNING: manual dirty requires key. replacement of node or parent will delete key.
 			
 			el = domParent.childNodes[changeIndex];
-			if (false === applyComponentLifeCycle(m$1.Component.onbeforeupdate)) continue;
+			if (false === applyComponentLifeCycle(m.Component.onbeforeupdate)) continue;
 			if (null == data(el).removing) { // target node is waiting for mutation
 
 				let differentComponentInst = [];
@@ -409,11 +410,11 @@
 				data(el).componentInstStack = componentInstStack;
 				
 				if (isObject(v)) {
-					applyVirtualDom(el, _v, ns/*, cb*/); // recurse (depth-first traversal)
+					m.render(el, _v, ns/*, cb*/); // recurse (depth-first traversal)
 					if (abortRedraw) return;
 				}
-				applyComponentLifeCycle(m$1.Component.oncreate, el);
-				applyComponentLifeCycle(m$1.Component.onupdate, el);
+				applyComponentLifeCycle(m.Component.oncreate, el);
+				applyComponentLifeCycle(m.Component.onupdate, el);
 			}
 		}
 		siblingIndex = domParent.childNodes.length;
@@ -427,30 +428,30 @@
 		}
 	};
 	let timer, start, end;
-	m$1.lastRenderTime = 0; // warn: browser limits reliability to +/-2ms
+	m.lastRenderTime = 0; // warn: browser limits reliability to +/-2ms
 	const _redraw = now => {
-		m$1.renderCount++;
+		m.renderCount++;
 		start = performance.now();
 		try {
-			applyVirtualDom(document.body, m$1.root);
+			m.render(document.body, m.root);
 		}
 		catch(e) {
 			throw e;
 		}
 		finally {
 			end = performance.now();
-			m$1.lastRenderTime = end - start;
+			m.lastRenderTime = end - start;
 			timer = null;
 		}
 	};
-	m$1.renderCount = 0;
-	m$1.redraw = () => {
+	m.renderCount = 0;
+	m.redraw = () => {
 		if (null != timer) return;
 		timer = 1;
 		_redraw();
 	};
 
-	m$1.untrusted = v => {
+	m.untrusted = v => {
 		if ('string' === typeof v) return v;
 		else if ('number' === typeof v) return ''+v;
 		else {

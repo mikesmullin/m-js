@@ -39,7 +39,7 @@ Components.Link = {
 			$class: (v.attrs.relative ?
 				-1 !== Route.uri.search(v.attrs.href) :
 				Route.uri === v.attrs.href) ?
-					Utils.joinStringIfNotEmpty(v.attrs.class, ' ',  'active') :
+					Utils.joinUnlessEmpty(' ', v.attrs.class,  'active') :
 					v.attrs.class,
 			'a.link': {
 				$target: v.attrs.target,
@@ -1408,7 +1408,7 @@ Components.Link = {
 		return {
 			'a': {
 				$class: Route.uri === v.attrs.href ?
-					Utils.joinStringIfNotEmpty(v.attrs.class, ' ',  'active') :
+					Utils.joinUnlessEmpty(' ', v.attrs.class,  'active') :
 					v.attrs.class,
 				$href: v.attrs.href,
 				$title: Route.getTitleByURI(v.attrs.href),
@@ -1422,10 +1422,18 @@ Components.Link = {
 `);
 
 doc('/api/utils/request', 'Utils.request()', `
-# Utils.request(method, url, data)
+# Utils.request(cancel, state, key, method, url, data)
 
 Where
 
+- The ~cancel~ parameter is a ~Boolean~ value indicating whether to cancel the previous request, if one is still pending.
+
+- The ~state~ parameter is an ~Object~ value which will hold a reference to the XMLHTTPRequest until it is completed.
+  This is used to determine the state and progress of the request, and to cancel it.
+
+- The ~key~ parameter is a ~String~ dot-notated path resolvable inside the state object above,
+  where the XHR object will be stored. Use it like a namespace to group similar requests.
+ 
 - The ~method~ parameter is a ~String~ value being one of ~GET~, ~POST~, ~PUT~, ~DELETE~, etc.
 
 - The ~url~ parameter is a ~String~ with value of any valid URL.

@@ -16,19 +16,22 @@ Loader.loadJs('/socket.io/socket.io.js', 'text/javascript', false).then(() => {
 	});
 });
 
-const memory = { App: {} };
-
-export default {
-	reloader: App => () => {
-		Object.assign(memory.App, App);
-
-		if (null != App.db) {
-			App.db.applyDefaults();
-			App.db.reloadState();
-		}
-
-		Utils.data.flush();
-
-		App.init();
-	}
-};
+// example:
+// you will probably want a lot of control over how to customize this
+// from within your app.
+//
+// const memory = { App: {} };
+// export default {
+// 	reloader: App => () => {
+// 		Object.assign(memory.App, App);
+//
+// 		if (null != App.db) {
+// 			App.db.applyDefaults();
+// 			App.db.reloadState();
+// 		}
+//
+// 		Utils.data.flush();
+//
+// 		App.init();
+// 	}
+// };

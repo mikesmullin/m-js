@@ -1,4 +1,4 @@
-import {is, isA, isS, NA, sum} from "../utils";
+import {is, isA, isS, NA, sum} from "../utils.js";
 
 /**
  * Chunker: A pattern-matcher and map-reducer.

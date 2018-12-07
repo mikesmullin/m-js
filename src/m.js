@@ -31,7 +31,7 @@ VNode.attrs = function*(tag, o) {
 		if (null != id)
 			attrs.id = id; // last wins
 		else if ('string' === typeof cls && '' !== cls.trim()) {
-			attrs.class = Utils.joinStringIfNotEmpty(attrs.class, ' ', cls); // append space-delimited
+			attrs.class = Utils.joinUnlessEmpty(' ', attrs.class, cls); // append space-delimited
 		}
 		else if (null != attrName)
 			attrs[attrName] = undefined === attrValue ? null : attrValue; // merge object
@@ -43,7 +43,7 @@ VNode.attrs = function*(tag, o) {
 		for (let k in o)
 			if ('$class' === k) {
 				if ('string' === typeof o.$class && '' !== o.$class.trim()) {
-					attrs.class = Utils.joinStringIfNotEmpty(attrs.class, ' ', o.$class);
+					attrs.class = Utils.joinUnlessEmpty(' ', attrs.class, o.$class);
 				}
 			} else if ('$'===k[0] && k.length > 1)
 				attrs[k.substr(1)] = o[k];
@@ -102,7 +102,7 @@ m.Component = class {
 	}
 }
 m.Component.isComponent = o =>  Utils.isFunction(Utils.get(null, o, '$', 'view'));
-m.Component.instance = (state, o) => { // wrap component in state
+m.instance = (state, o) => { // wrap component in state
 	return {
 		state: state,
 		oninit(v) {
@@ -176,7 +176,7 @@ const setEventListener = (el, event, cb) => {
 const xforms = { insertBefore: 0, appendChild:  1, recycleChild: 2, removeChild: 3 };
 let abortRedraw;
 // basically graph theory: walk tree, apply graph transforms, where DOM == DAG
-const applyVirtualDom = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
+m.render = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
 	let el, v, _v, vKey, vTag, attrsItr, attr, componentInstStack = [],
 	fn, siblingIndex, changeIndex, foundKey, passover = new Set([]), i = -1;
 	abortRedraw = false;
@@ -188,7 +188,7 @@ const applyVirtualDom = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
 			// notice: component lifecycle methods may return undefined or a Promise,
 			//   which will stall the update but only for a particular component branch.
 			//   its like dirty = false, but it can apply to indexed siblings too,
-			//   as long as they dont move.
+			//   as long as they don't move.
 		}
 		return p; // array of return values
 	};
@@ -352,7 +352,7 @@ const applyVirtualDom = (domParent, vnode/* a.k.a. fragment*/, ns/*, cb*/) => {
 			Utils.data(el).componentInstStack = componentInstStack;
 			
 			if (Utils.isObject(v)) {
-				applyVirtualDom(el, _v, ns/*, cb*/); // recurse (depth-first traversal)
+				m.render(el, _v, ns/*, cb*/); // recurse (depth-first traversal)
 				if (abortRedraw) return;
 			}
 			applyComponentLifeCycle(m.Component.oncreate, el);
@@ -375,7 +375,7 @@ const _redraw = now => {
 	m.renderCount++;
 	start = performance.now();
 	try {
-		applyVirtualDom(document.body, m.root);
+		m.render(document.body, m.root);
 	}
 	catch(e) {
 		throw e;

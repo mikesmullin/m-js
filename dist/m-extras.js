@@ -178,22 +178,21 @@
 	 */
 	const lucene = str => {
 		// semantic grammar check
-		if (/NOT\s{0,99}[(]|NOT\s{0,99}[)]|NOT\s{0,99}$/.test(str))
-			err("NOT must appear before values. ie. NOT (a AND b) == (NOT a OR NOT b)");
 		if (/^(?:AND|OR)|[(](?:AND|OR)|(?:AND|OR)[)]|(?:AND|OR)$/.test(str))
 			err("Logical operators (AND OR) must appear between values.");
 
 		// begin multi-pass tokenizer
 		// pass 1: building blocks
 		let chunks = chunker([str], NA,
-			/(NOT)\s{1,99}|\s{1,99}(AND|OR)\s{1,99}|"(?:()"|(.{0,}?[^\\])")|([a-z0-9_@][a-z0-9_\-\.@]{0,99})|(:)|([()])/ig, m =>
+			/(NOT)\s{1,99}|\s{1,99}(AND|OR)\s{1,99}|"(?:()"|(.{0,999}?[^\\])")|([a-z0-9_@{][a-z0-9_.@{}]{0,999})|(:)|([()])|(\[(now(?:[+-]\d{0,9}[dhms])?) TO (now(?:[+-]\d{0,9}[dhms])?)\])/ig, m =>
 			is(m[1]) ? [ 'U', m[1] ] : // unary operator
 			is(m[2]) ? [ 'B', m[2] ] : // binary operator
 			is(m[3]) ? [ 'S', '' ] : // empty string
 			is(m[4]) ? [ 'S', m[4].replace(/\\"/g, '"') ] : // escaped string
-			is(m[5]) ? [ 'I', m[5]] : // identifier
+			is(m[5]) ? [ ('NOT' === m[5] ? 'U' : ['AND','OR'].includes(m[5]) ? 'B' : 'I'), m[5] ] : // identifier
 			is(m[6]) ? [ 'D' ] : // colon key-value delimiter
 			is(m[7]) ? [ {'(':'O',')':'C'}[m[7]], m[7] ] : // opening or closing parenthesis
+			is(m[8]) ? [ 'R', m[9], m[10] ] : // range
 			NA),
 			symbols =()=> chunks.map(c=>c[0]).join('');
 
@@ -202,13 +201,15 @@
 
 		// pass 2: merge identifier and strings into key-value pairs. reduce tokens 6:4 UBSIDP>UBKP
 		chunker(chunks, symbols(),
-			/U|B|O|C|(?:([SI])D)?([SI])/g, (m,sl) =>
-			is(m[1]) ? [ 'K', sl(1)[0][1], sl(1,+2,1)[0][1] ] : // key:val
-			is(m[2]) ? [ 'K', NA, sl(2)[0][1] ] : // val
+			/U|B|O|C|(?:([SI])D)?([SIR])/g, (m,sl) =>
+			is(m[1]) ? [ 'K', sl(1)[0][1], ...sl(1,+2,1)[0].slice(1) ] : // key:val
+			is(m[2]) ? [ 'K', NA, ...sl(2)[0].slice(1) ] : // val
 			chunks[m.index]);
 
 		// semantic grammar check
-		if (!/^$|^(?!B)(?:B?[OC]{0,99}U?K{1,}[OC]{0,99}){1,999}$/g.test(symbols())) err('Incorrect grammar.');
+		if (!/^$|^(?!B)(?:B?[OC]{0,99}U?K{1,}[OC]{0,99}){1,999}$/g.test(symbols())) {
+			err('Incorrect grammar.');
+		}
 
 		// compiler to JSON intermediate representation
 		// pass 3: merge UKB into expressions. reduce tokens 4:3 UBKP>OXC
@@ -220,7 +221,8 @@
 					k: sl(3)[0][1], // key
 					// lookbehind 1 for U, if found then not equal, otherwise default to is equal
 					u: is(m[2]) ? '!=' : '==', // unary operator
-					v: sl(3)[0][2], // value
+					r: (null != sl(3)[0][3]) ? [ sl(3)[0][2], sl(3)[0][3] ] : undefined, // range
+					v: (null == sl(3)[0][3]) ? sl(3)[0][2] : undefined, // value
 					// lookahead  1 for B, splice into X.b, or default to AND
 					b: is(m[5]) ? sl(5)[0][1] : '', // binary operator. "" means implicit AND
 					p: ',',
@@ -272,6 +274,19 @@
 		return out;
 	};
 
+	const escapeLucene = s =>
+		(null == s) ? '' :
+
+		// if double-quotes or wildcard are used, we assume the user knows what they are doing,
+		// and no attempt will be made to escape it further; the user must escape it themselves.
+		/["*]/.test(s) ? s :
+
+		// identifiers return unquoted string as-is
+		/^[a-z0-9_@{][a-z0-9_\.@{}]{0,99}$/i.test(s) ? s :
+
+		// string containing special characters gets quoted and escaped
+		`"${s.replace(/"/g,'\\"')}"`;
+
 	/**
 	 * Client-side JSON object search,
 	 * using Lucene-inspired syntax.
@@ -282,30 +297,62 @@
 	 */
 	const searchy = q => {
 		const ast = lucene(q),
-			reverseIf = (a,cond) => ((cond && a.reverse()), a),
-			toString = s => is(s) ? ''+s : '';
+			reverseIf = (a,cond) => ((cond && a.reverse()), a);
+
 		return { matchObject(record) {
-			// NOTICE: assumes user is passing result of `JSON.flatten(record)`.
 			// build index and search functions
-			let keys = [],
+			const keys = [],
 				values = [],
-				index = Object.keys(record).reduce((acc,K)=>{
+				flatIndex = {},
+				toVisit = [[[],record]],
+				pop = (path,v) => {
 					// NOTICE: keys always match case-insensitive.
-					let k = lower(K),
-						// NOTICE: record values are always cast to string,
-						//   [and object keys are already strings by necessity].
-						V = toString(record[K]),
-						// NOTICE: values always match case-insensitive.
-						v = lower(V);
-					// NOTICE: only string and number values are searchable,
-					//   but its fine since record is result of `JSON.flatten()`.
-					keys.push(k); // index of keys for key comparison
-					acc[k] = v; // index of key:values for key:value comparison
-					values.push(v); // index of values for value comparison
-					return acc;
-				}, {}),
+					const key = path.join('.').toLowerCase();
+					// NOTICE: record values are always cast to string,
+					//   [and object keys are already strings by necessity].
+					// NOTICE: values always match case-insensitive.
+					const value = (''+v).toLowerCase();
+					// index of keys for key comparison
+					keys.push(key);
+					// index of values for value comparison
+					values.push(value);
+					// index of key:values for key=>value lookup
+					flatIndex[key] = value;
+				},
+				push$$1 = (path,k,v) =>
+					toVisit.push([[...path,k],v]);
+				while (toVisit.length>0) {
+					const [path,o] = toVisit.shift();
+					if (Array.isArray(o)) {
+						let allNonObjects = true;
+						for (let i=0,len=o.length; i<len; i++) {
+							if (null != o[i] && 'object' === typeof o[i]) {
+								allNonObjects = false;
+							}
+						}
+						// arrays of non-objects are searchable as a joined string
+						if (allNonObjects) {
+							pop(path,o.join(' '));
+						}
+						// all other arrays you must specify the key with index like a.0:value,
+						// although you can still get lucky by partial matching on key or value like a:val
+						else {
+							for (let i=0,len=o.length; i<len; i++) {
+								push$$1(path,i,o[i]);
+							}
+						}
+					}
+					else if (null != o && 'object' === typeof o) {
+						for (const k of Object.keys(o)) {
+							if (o.hasOwnProperty(k)) {
+								push$$1(path,k,o[k]);
+							}
+						}
+					}
+					else pop(path,o);
+				}
 				// NOTICE: key:values always match wildcard like *KEY*:*VALUE*
-				matchValue = (haystack,needle)/*:bool*/ => -1!==haystack.indexOf(needle),
+				const matchValue = (haystack,needle)/*:bool*/ => -1!==haystack.indexOf(needle),
 				matchAnyValue = (v) => values.some(haystack=>matchValue(haystack,v)),
 				matchKeyValue = (K, cmp, V)/*:bool*/ => {
 					let v = lower(''+V);
@@ -314,7 +361,7 @@
 					// NOTICE: search key may match more than one record key,
 					//   in which case first matching value wins
 					let foundKey = keys.find(haystack=>-1!==haystack.search(k));
-					return is(foundKey) && cmp(matchValue(index[foundKey], v));
+					return is(foundKey) && cmp(matchValue(flatIndex[foundKey], v));
 				},
 
 				// NOTICE: Javascript is left-associative, like Lucene [and most other languages],
@@ -351,21 +398,14 @@
 	const tolucene = (ast, last) => {
 		const reverseIf = (a,cond) =>((cond && a.reverse()), a);
 		const get$$1 = (alt,o,k) => (null != o && null != o[k]) ? o[k] : alt;
-
-		const toString = s =>
-			null == s ? '' :
-			// identifiers return unquoted string as-is
-			/^[a-z0-9_@]{1}[a-z0-9_\-\.@]{0,99}$/i.test(s) ? s :
-			// string containing special characters gets quoted and escaped
-			`"${s.replace(/"/g,'\\"')}"`;
-
 		return ast.map((x,i) => {
 			if (null == x) return '';
 			return get$$1('',x,'p').split(',')[0] + // prefix parens
 				// K:V resolved to safe-to-eval boolean literals
 				('!='===x.u ? 'NOT ' : '') +
-				(is(x.k) ? (toString(x.k) +':') : '') +
-				toString(x.v) +
+				(is(x.k) ? (escapeLucene(x.k) +':') : '') +
+				(null != x.r ? `[${x.r[0]} TO ${x.r[1]}]` :
+					escapeLucene(x.v)) +
 				// order of bool AND OR and parenthesis depends on its position
 				reverseIf([
 					get$$1([],x,'p').split(',')[1], // suffix parens
@@ -476,6 +516,7 @@
 
 	exports.LuceneSyntaxError = LuceneSyntaxError;
 	exports.lucene = lucene;
+	exports.escapeLucene = escapeLucene;
 	exports.searchy = searchy;
 	exports.tolucene = tolucene;
 	exports.markdown = markdown;

@@ -233,7 +233,7 @@ export const fire = (fn, ...args) => { if (isFunction(fn)) return fn(...args); }
 export const id = s => null == s ? undefined : s.replace(/[^a-z0-9]{1,999}/ig, '-').replace(/(^-{1,999}|-{1,999}$)/g, '');
 
 export const pluralize = (n,plural,singular) => 1===n ? singular : plural;
-export const titleize = s => ('_'+s).replace(/([A-Z])/,'_$1').replace(/_[a-z]/gi, s=>s.toUpperCase()).replace(/_{1,9}/g, ' ').trim();
+export const titleize = s => ('_'+s).replace(/([A-Z])/g,'_$1').replace(/_[a-z]/gi, s=>s.toUpperCase()).replace(/_{1,9}/g, ' ').trim();
 export const confirmPageUnload = (testDirty, msg='Any unsaved changes will be lost.') => {
 	const listener = e => {
 		if (!fire(testDirty)) return; // abort if no changes

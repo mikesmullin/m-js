@@ -4,7 +4,7 @@
   "description": "A minimalist, modernist, UI component framework for the web.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "mocha test/**/*.js",
     "docs": "nodemon --watch docs/server.js docs/server.js",
     "watch": "nodemon --watch src -e js --exec rollup -- -c",
     "build": "rollup -c"

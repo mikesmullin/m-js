@@ -59,15 +59,17 @@ describe('lucene-searchy.js', () => {
 		it('31', () => test('"a"', 'a'));
 		it('32', () => test(' "" ', '""'));
 		it('33', () => test('a:', 'Keys must precede a value.'));
-		it('34', () => test('NOT (1 OR 2)', 'NOT must appear before values. ie. NOT (a AND b) == (NOT a OR NOT b)'));
-		it('35', () => test('(1 OR 2 NOT)', 'NOT must appear before values. ie. NOT (a AND b) == (NOT a OR NOT b)'));
-		it('36', () => test('2 NOT', 'NOT must appear before values. ie. NOT (a AND b) == (NOT a OR NOT b)'));
+		it('34', () => test('NOT (1 OR 2)', 'Incorrect grammar.'));
+		it('35', () => test('(1 OR 2 NOT)', 'Incorrect grammar.'));
+		it('36', () => test('2 NOT', 'Incorrect grammar.'));
 		it('37', () => test('AND b', 'Logical operators (AND OR) must appear between values.'));
 		it('38', () => test('(AND b)', 'Logical operators (AND OR) must appear between values.'));
 		it('39', () => test('(b AND)', 'Logical operators (AND OR) must appear between values.'));
 		it('40', () => test('b AND', 'Logical operators (AND OR) must appear between values.'));
 		it('41', () => test('a:b OR NOT @timestamp:d', 'a:b OR NOT @timestamp:d'));
-		it('42', () => test('"service":"ec2.amazonaws.com" "region":"us-east-1"', 'service:ec2.amazonaws.com region:us-east-1'));
+		it('42', () => test('"service":"mbu.cooking.com" "region":"us-west"', 'service:mbu.cooking.com region:"us-west"'));
+		it('43', () => test('"service":"cat4.cooking.com" "message":"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz (C:d.*) (A: \\"B\\")"',
+		'service:cat4.cooking.com message:abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz (C:d.*) (A: "B")'));
 	});
 
 	describe('searchy()', () => {

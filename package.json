@@ -24,7 +24,7 @@
     "babel-plugin-transform-es2015-modules-commonjs": "^6.26.2",
     "babel-register": "^6.26.0",
     "chai": "^4.1.2",
-    "express": "^4.16.3",
+    "express": "^4.17.3",
     "javascript-stringify": "^1.6.0",
     "mocha": "^5.2.0",
     "nodemon": "^1.18.1",

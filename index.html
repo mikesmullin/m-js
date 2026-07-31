@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>m.js v3</title>
+  <meta name="description" content="m.js v3 — minimalist UI framework with HMR, Router, and Store" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            neon: {
+              cyan: '#22d3ee',
+              pink: '#f472b6',
+              purple: '#c084fc',
+              blue: '#38bdf8',
+            },
+            void: {
+              950: '#050510',
+              900: '#0a0a1a',
+              800: '#12122a',
+              700: '#1a1a3e',
+            }
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          boxShadow: {
+            neon: '0 0 20px rgba(34, 211, 238, 0.25), 0 0 40px rgba(244, 114, 182, 0.1)',
+            'neon-pink': '0 0 16px rgba(244, 114, 182, 0.4)',
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body class="h-full bg-void-950 text-slate-100 antialiased">
+  <div id="app" class="min-h-full"></div>
+  <script type="module" src="./app.js" data-hmr-entry></script>
+  <script type="module" src="./m/hot-client.js"></script>
+</body>
+</html>

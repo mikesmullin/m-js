@@ -110,6 +110,30 @@ function flushEffects() {
 }
 
 /**
+ * Plain data that is safe to deep-proxy (POJOs + arrays).
+ * Skip host objects (DOM, Date, Promise, …) so we never break identity.
+ * Allows Object.create(parent) bags used as x-for child scopes (Alpine-style).
+ * @param {any} v
+ */
+function canReactive(v) {
+  if (v == null || typeof v !== 'object') return false;
+  if (v[REACTIVE]) return true;
+  if (proxyMap.has(v)) return true;
+  if (Array.isArray(v)) return true;
+  if (v instanceof Date || v instanceof RegExp || v instanceof Promise) {
+    return false;
+  }
+  if (typeof Node !== 'undefined' && v instanceof Node) return false;
+  // POJO, null-proto, or Object.create(parent) scope objects
+  const tag = Object.prototype.toString.call(v);
+  return tag === '[object Object]';
+}
+
+/**
+ * Deep reactive proxy. Nested POJOs/arrays are wrapped on read/write so
+ * mutations like `store.history.unshift(row)` or `msg.text += chunk`
+ * re-run effects that touched those paths — no manual bump/timers.
+ *
  * @param {object} target
  * @returns {any}
  */
@@ -120,6 +144,7 @@ export function reactive(target) {
   // Already wrapped this raw object?
   const existing = proxyMap.get(target);
   if (existing) return existing;
+  if (!canReactive(target)) return target;
 
   const proxy = new Proxy(target, {
     get(obj, key, receiver) {
@@ -131,8 +156,7 @@ export function reactive(target) {
       // Always bind to *this* reactive proxy — not `receiver`.
       // x-for / nested scopes use Object.create(proxy); lookups then hit this
       // trap with receiver === childScope. Binding to receiver would make
-      // `this.foo = …` write onto the per-item scope instead of the store,
-      // so sidebar history / shared state never updates (until full reload).
+      // `this.foo = …` write onto the per-item scope instead of the store.
       if (
         typeof val === 'function' &&
         Object.prototype.hasOwnProperty.call(obj, key)
@@ -145,16 +169,32 @@ export function reactive(target) {
         if (!cache.has(key)) cache.set(key, val.bind(proxy));
         return cache.get(key);
       }
+      // Deep wrap nested data so array/object mutations notify subscribers.
+      if (canReactive(val)) return reactive(val);
       return val;
     },
     set(obj, key, value, receiver) {
       const prev = obj[key];
-      const ok = Reflect.set(obj, key, value, receiver);
+      const prevLen = Array.isArray(obj) ? obj.length : null;
+      const next =
+        canReactive(value) && !value[REACTIVE] ? reactive(value) : value;
+      // Store the raw target when value is a proxy we created
+      const rawNext =
+        next && typeof next === 'object' && next[RAW] ? next[RAW] : next;
+      // Write against the raw target (not `receiver`). Using the proxy as
+      // receiver breaks Array.prototype mutators (push/splice/…) — length and
+      // index sets never land on the underlying array, so effects never re-run.
+      const ok = Reflect.set(obj, key, rawNext, obj);
       // Invalidate bound method cache if a function slot changes
       if (typeof value === 'function' || typeof prev === 'function') {
         boundMethodCache.get(obj)?.delete(key);
       }
-      if (!Object.is(prev, value)) trigger(obj, key);
+      if (!Object.is(prev, rawNext)) trigger(obj, key);
+      // Setting arr[i] on a JS Array auto-updates .length without a separate
+      // [[Set]] for "length". Notify length subscribers (push/unshift/…).
+      if (Array.isArray(obj) && prevLen !== null && obj.length !== prevLen) {
+        trigger(obj, 'length');
+      }
       return ok;
     },
     deleteProperty(obj, key) {
@@ -169,6 +209,47 @@ export function reactive(target) {
 
   proxyMap.set(target, proxy);
   return proxy;
+}
+
+/**
+ * Longest increasing subsequence (patience sorting), O(n log n).
+ * Ported from gobbler-foundation2 M.mjs `_O_n_log_n_LIS`.
+ * Used by keyed x-for to leave a maximal stable subsequence unmoved
+ * while reordering the rest (VDOM-style list reconciliation).
+ *
+ * @param {number[]} a map oldIndex → newIndex (sparse ok)
+ * @returns {Set<number>} new indices that should keep their DOM position
+ */
+export function longestIncreasingSubsequence(a) {
+  /** @type {{ target: number, idx: number, leaf: any }[]} */
+  const dp = [];
+  /** @type {{ target: number, idx: number, leaf: any } | null} */
+  let deepest = null;
+  for (let i = 0, l = a.length; i < l; i++) {
+    if (a[i] == null || Number.isNaN(a[i])) continue;
+    if (deepest == null || (deepest.target ?? 0) < (a[i] ?? 0)) {
+      deepest = { target: a[i], idx: i, leaf: dp[dp.length - 1] };
+      dp.push(deepest);
+      continue;
+    }
+    let start = 0;
+    let end = dp.length - 1;
+    while (start < end) {
+      const mid = (start >>> 1) + (end >>> 1) + (start & end & 1);
+      if ((dp[mid].target ?? 0) < (a[i] ?? 0)) start = mid + 1;
+      else end = mid;
+    }
+    dp[start] = { target: a[i], idx: i, leaf: dp[start - 1] };
+    if (start === dp.length - 1) deepest = dp[start];
+  }
+  /** @type {Set<number>} */
+  const results = new Set();
+  let c = deepest;
+  while (c != null) {
+    results.add(a[c.idx]);
+    c = c.leaf;
+  }
+  return results;
 }
 
 /**
@@ -511,20 +592,22 @@ function applyBinding(el, prop, result) {
           el.classList.toggle(token, !!on);
         }
       }
+      // Prefer classList as source of truth; sync attribute for inspectors/mocks.
+      el.setAttribute('class', el.classList.toString());
     } else if (Array.isArray(result)) {
       // merge with non-bound classes is hard; set all
       const staticCls = el.getAttribute('data-static-class') || '';
-      el.setAttribute(
-        'class',
-        [staticCls, ...result.filter(Boolean)].filter(Boolean).join(' '),
-      );
+      const merged = [staticCls, ...result.filter(Boolean)]
+        .filter(Boolean)
+        .join(' ');
+      el.setAttribute('class', merged);
     } else if (result != null && result !== false) {
       const staticCls = el.getAttribute('data-static-class');
-      if (staticCls != null) {
-        el.setAttribute('class', `${staticCls} ${result}`.trim());
-      } else {
-        el.setAttribute('class', String(result));
-      }
+      const merged =
+        staticCls != null
+          ? `${staticCls} ${result}`.trim()
+          : String(result);
+      el.setAttribute('class', merged);
     }
   } else if (prop === 'style') {
     if (typeof result === 'object' && result) {
@@ -856,6 +939,31 @@ function assignPath(scope, path, value) {
   obj[parts[parts.length - 1]] = value;
 }
 
+/**
+ * Walk scope chain for the outermost reactive proxy.
+ * x-for row scopes are reactive locals with parent raw on the prototype;
+ * method calls like remove(id) must use the *parent store* as `this`, not the row.
+ * @param {object} scope
+ */
+function findReactiveRoot(scope) {
+  let cur = scope;
+  /** @type {object | null} */
+  let best = null;
+  const seen = new Set();
+  while (cur && typeof cur === 'object' && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur[REACTIVE]) {
+      best = cur;
+    } else {
+      const proxied = proxyMap.get(cur);
+      if (proxied) best = proxied;
+    }
+    const raw = cur[RAW] || cur;
+    cur = Object.getPrototypeOf(raw);
+  }
+  return best || scope;
+}
+
 function processOn(el, event, expression, scope, modifiers) {
   let target = el;
   let eventName = event;
@@ -879,13 +987,33 @@ function processOn(el, event, expression, scope, modifiers) {
     if (modifiers.includes('once')) {
       target.removeEventListener(eventName, handler);
     }
-    // method name only
     const expr = expression.trim();
-    if (/^[A-Za-z_$][\w$]*$/.test(expr) && typeof scope[expr] === 'function') {
-      scope[expr](e);
-    } else {
-      evaluateAction(expr, scope, el, e);
+    const self = findReactiveRoot(scope);
+
+    // Bare method name: inc
+    if (/^[A-Za-z_$][\w$]*$/.test(expr)) {
+      const fn = evaluate(expr, scope, el);
+      if (typeof fn === 'function') {
+        fn.call(self, e);
+        return;
+      }
     }
+
+    // Call expression: remove(item.id) — bare `with` call loses `this`.
+    const call = expr.match(/^([A-Za-z_$][\w$]*)\(([\s\S]*)\)\s*$/);
+    if (call) {
+      const fn = evaluate(call[1], scope, el);
+      if (typeof fn === 'function') {
+        const argsSrc = call[2].trim();
+        const args = argsSrc
+          ? evaluate(`[${argsSrc}]`, scope, el, e) || []
+          : [];
+        fn.apply(self, Array.isArray(args) ? args : []);
+        return;
+      }
+    }
+
+    evaluateAction(expr, scope, el, e);
   };
 
   const opts = {};
@@ -917,7 +1045,16 @@ function processOn(el, event, expression, scope, modifiers) {
 }
 
 /**
- * x-for="item in items" on an element (clones it). Prefer <template x-for>.
+ * x-for="item in items" — Alpine-style keyed reconciliation.
+ *
+ * Like alpinejs/src/directives/x-for.js:
+ *  - Map key → rendered row (survive across list mutations)
+ *  - refresh row scope in place (no full destroy when key matches)
+ *  - delete keys that disappeared; create keys that appeared
+ *  - reorder DOM with LIS (gobbler) so a maximal subsequence stays put
+ *
+ * Key expression: :key / x-bind:key / m-bind:key (default: index).
+ * Prefer <template x-for>; bare elements are also supported.
  */
 function processFor(el, expression, scope) {
   const match = expression.match(
@@ -929,67 +1066,213 @@ function processFor(el, expression, scope) {
   }
   const [, itemName, indexName, listExpr] = match;
 
+  // Alpine stores key on the for node as x-bind:key / :key before loop runs.
+  const keyExpr =
+    el.getAttribute(':key') ||
+    el.getAttribute('x-bind:key') ||
+    el.getAttribute('m-bind:key') ||
+    null;
+  if (keyExpr) {
+    el.removeAttribute(':key');
+    el.removeAttribute('x-bind:key');
+    el.removeAttribute('m-bind:key');
+  }
+
   const isTemplate = el.tagName === 'TEMPLATE';
   const anchor = document.createComment(`x-for: ${expression}`);
   el.parentNode.insertBefore(anchor, el);
   el.remove();
 
-  /** @type {Element[]} */
-  let rendered = [];
+  /**
+   * @typedef {{ nodes: Element[], scope: object }} ForRow
+   * @type {Map<any, ForRow>}
+   */
+  let lookup = new Map();
+
+  // Parent raw for prototype chain (method name lookup under `with`).
+  // Must NOT be the parent *proxy* as [[Prototype]] of a reactive row —
+  // that re-enters parent tracking from row effects (infinite flush).
+  const parentRaw = scope?.[RAW] || scope || {};
+
+  /**
+   * Alpine-style row scope: reactive locals so `_x_refreshXForScope`-equivalent
+   * (`scope.item = newItem`) re-runs x-text / binds that read `item.*`.
+   * Prototype = parent raw for reading parent fields/methods; `this` for calls
+   * is fixed in processOn via findReactiveRoot → proxyMap.
+   */
+  function makeRowScope(item, index) {
+    const locals = { [itemName]: item };
+    if (indexName) locals[indexName] = index;
+    else locals.$index = index;
+    Object.setPrototypeOf(locals, parentRaw);
+    return reactive(locals);
+  }
+
+  /**
+   * Alpine `el._x_refreshXForScope` — reactive sets on the row scope.
+   * @param {object} rowScope
+   * @param {any} item
+   * @param {any} index
+   */
+  function refreshRowScope(rowScope, item, index) {
+    rowScope[itemName] = item;
+    if (indexName) rowScope[indexName] = index;
+    else rowScope.$index = index;
+  }
 
   const stop = effect(() => {
-    const list = evaluate(listExpr, scope, anchor.parentElement) || [];
-    const items = Array.isArray(list) ? list : Object.entries(list);
-
-    // teardown old
-    for (const node of rendered) {
-      cleanupEl(node);
-      node.remove();
+    let list = evaluate(listExpr, scope, anchor.parentElement);
+    if (list == null) list = [];
+    // Alpine: `x-for="i in 100"`
+    if (typeof list === 'number' && Number.isFinite(list)) {
+      list = Array.from({ length: list }, (_, i) => i + 1);
     }
-    rendered = [];
+    if (list instanceof Set || list instanceof Map) {
+      list = Array.from(list);
+    }
 
-    let insertAfter = anchor;
-    for (let i = 0; i < items.length; i++) {
-      const item = Array.isArray(list) ? items[i] : items[i][1];
-      const key = Array.isArray(list) ? i : items[i][0];
+    const isArr = Array.isArray(list);
+    // Subscribe to length + indices so push/splice/replace re-run this effect
+    // without reassigning the array on the parent store (deep reactive).
+    /** @type {[any, any][]} */
+    let entries;
+    if (isArr) {
+      void list.length;
+      entries = list.map((item, i) => [i, item]);
+    } else if (list && typeof list === 'object') {
+      entries = Object.entries(list);
+    } else {
+      entries = [];
+    }
 
-      const childScope = Object.create(scope);
-      childScope[itemName] = item;
-      if (indexName) childScope[indexName] = Array.isArray(list) ? i : key;
-      else childScope.$index = Array.isArray(list) ? i : key;
+    const oldLookup = lookup;
+    lookup = new Map();
 
-      let node;
+    /** @type {{ key: any, item: any, index: any }[]} */
+    const plan = [];
+    for (let i = 0; i < entries.length; i++) {
+      const index = isArr ? i : entries[i][0];
+      const item = entries[i][1];
+      let key;
+      if (keyExpr) {
+        const keyScope = makeRowScope(item, index);
+        key = evaluate(keyExpr, keyScope, anchor.parentElement);
+        if (key != null && typeof key === 'object') {
+          console.warn('[m] x-for :key must be string/number, got object');
+          key = String(i);
+        }
+      } else {
+        key = index;
+      }
+      if (oldLookup.has(key)) {
+        lookup.set(key, /** @type {ForRow} */ (oldLookup.get(key)));
+        oldLookup.delete(key);
+      }
+      plan.push({ key, item, index });
+    }
+
+    // Keys only in old → remove (Alpine: leftover oldLookup)
+    for (const rec of oldLookup.values()) {
+      for (const node of rec.nodes) {
+        cleanupEl(node);
+        node.remove();
+      }
+    }
+
+    // Optional LIS: old key order → new index map (gobbler VDOM). Rows in the
+    // longest increasing subsequence already sit in relative order and can skip
+    // a move when they are already `prev.nextSibling`.
+    processFor._lastKeys = processFor._lastKeys || new WeakMap();
+    const lastKeys = processFor._lastKeys.get(anchor) || [];
+    /** @type {Map<any, number>} */
+    const oldPos = new Map();
+    for (let i = 0; i < lastKeys.length; i++) oldPos.set(lastKeys[i], i);
+    /** @type {number[]} */
+    const moveMap = [];
+    for (let ni = 0; ni < plan.length; ni++) {
+      const k = plan[ni].key;
+      if (oldPos.has(k)) moveMap[/** @type {number} */ (oldPos.get(k))] = ni;
+    }
+    const stay = longestIncreasingSubsequence(moveMap);
+
+    /** @type {any[]} */
+    const newKeys = [];
+    let prev = /** @type {Node} */ (anchor);
+
+    for (let ni = 0; ni < plan.length; ni++) {
+      const { key, item, index } = plan[ni];
+      newKeys.push(key);
+
+      if (lookup.has(key)) {
+        const rec = /** @type {ForRow} */ (lookup.get(key));
+        // Alpine _x_refreshXForScope — reactive write so x-text="item.name" re-runs
+        refreshRowScope(rec.scope, item, index);
+
+        for (const node of rec.nodes) {
+          // Alpine: if (prev.nextElementSibling !== el) prev.after(el)
+          // LIS: skip move when this new-index is in the stable subsequence
+          // and the node is already in the correct spot after prev.
+          const inPlace = prev.nextSibling === node;
+          if (!(stay.has(ni) && inPlace) && !inPlace && prev.parentNode) {
+            prev.parentNode.insertBefore(node, prev.nextSibling);
+          }
+          prev = node;
+        }
+        continue;
+      }
+
+      // Create: reactive row scope (Alpine reactive(scope) + parent linkage)
+      const childScope = makeRowScope(item, index);
+
+      /** @type {Element[]} */
+      const nodes = [];
       if (isTemplate) {
         const frag = /** @type {HTMLTemplateElement} */ (
           el
         ).content.cloneNode(true);
-        // wrap multi-root in a span? process each child
         const wrap = document.createElement('div');
         wrap.appendChild(frag);
-        // insert all children
-        const kids = [...wrap.childNodes];
-        for (const kid of kids) {
-          insertAfter.parentNode.insertBefore(kid, insertAfter.nextSibling);
-          insertAfter = /** @type {any} */ (kid);
+        for (const kid of [...wrap.childNodes]) {
           if (kid.nodeType === 1) {
+            prev.parentNode.insertBefore(kid, prev.nextSibling);
+            prev = kid;
             initTree(/** @type {Element} */ (kid), childScope);
-            rendered.push(/** @type {Element} */ (kid));
+            nodes.push(/** @type {Element} */ (kid));
+          } else {
+            prev.parentNode.insertBefore(kid, prev.nextSibling);
+            prev = kid;
           }
         }
       } else {
-        node = /** @type {Element} */ (el.cloneNode(true));
+        const node = /** @type {Element} */ (el.cloneNode(true));
         node.removeAttribute('x-for');
         node.removeAttribute('m-for');
-        insertAfter.parentNode.insertBefore(node, insertAfter.nextSibling);
-        insertAfter = node;
+        prev.parentNode.insertBefore(node, prev.nextSibling);
+        prev = node;
         initTree(node, childScope);
-        rendered.push(node);
+        nodes.push(node);
       }
+      lookup.set(key, { nodes, scope: childScope });
     }
+
+    processFor._lastKeys.set(anchor, newKeys);
   });
 
-  addCleanup(anchor.parentElement || document.body, stop);
+  addCleanup(anchor.parentElement || document.body, () => {
+    stop();
+    for (const rec of lookup.values()) {
+      for (const node of rec.nodes) {
+        cleanupEl(node);
+        node.remove();
+      }
+    }
+    lookup.clear();
+    processFor._lastKeys?.delete(anchor);
+  });
 }
+
+/** @type {WeakMap<Comment, any[]> | undefined} */
+processFor._lastKeys = undefined;
 
 function processIf(el, expression, scope) {
   const isTemplate = el.tagName === 'TEMPLATE';

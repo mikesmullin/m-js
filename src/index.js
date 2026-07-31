@@ -9,6 +9,7 @@ export {
   effect,
   initTree,
   destroyTree,
+  longestIncreasingSubsequence,
 } from './m.js';
 export { Router } from './router.js';
 export { createStore, clearStore } from './store.js';

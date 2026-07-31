@@ -14,7 +14,9 @@
   },
   "scripts": {
     "dev": "bun run src/server.js",
-    "start": "bun run src/server.js"
+    "start": "bun run src/server.js",
+    "test": "bun test tests/",
+    "test:watch": "bun test --watch tests/"
   },
   "keywords": [
     "ui",
@@ -28,5 +30,8 @@
   "license": "MIT",
   "dependencies": {
     "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.11.1"
   }
 }

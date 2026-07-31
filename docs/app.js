@@ -30,6 +30,8 @@ async function boot(bust = 0) {
   ]);
 
   Router.reset();
+  // GitHub Pages project site: https://user.github.io/m-js/ → base "/m-js"
+  Router.detectBase();
   Router.setTitleFormat((t) => (t ? `${t} · m.js` : 'm.js v3'));
 
   const page = (factory) => () => Layout({ page: factory() });
@@ -44,13 +46,14 @@ async function boot(bust = 0) {
   if (!window.__M_APP_MOUNTED__) {
     window.__M_APP_MOUNTED__ = true;
     M.mount('#app');
-    console.info('[docs] m.js v3 mounted', M.version);
+    console.info('[docs] m.js v3 mounted', M.version, 'base=', Router.base || '(root)');
   } else {
     // HMR: drop view instances (stores + URL keep), redraw with new modules
     M.invalidate();
+    Router.detectBase();
     Router.syncFromLocation();
     M.deferredBatchRedraw();
-    console.info('[docs] m.js hot reloaded', bust);
+    console.info('[docs] m.js hot reloaded', bust, 'base=', Router.base || '(root)');
   }
 }
 

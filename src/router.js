@@ -1,6 +1,9 @@
 /**
  * Client-side router — ported & simplified from m.js v2 (M.mjs).
  * Pathname-based; preserves URL across HMR.
+ *
+ * Supports a base path for project sites (e.g. GitHub Pages `/m-js`):
+ *   Router.setBase('/m-js')  or auto-detect via Router.detectBase()
  */
 
 const RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -8,8 +11,11 @@ const RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
 /** @type {Map<string, { uri: string, title: string, rx: RegExp, fn: Function }>} */
 const routes = new Map();
 
-/** @type {string} */
+/** @type {string} app path without base, e.g. "/" or "/guide" */
 let currentUri = '';
+
+/** @type {string} mount prefix with no trailing slash, e.g. "/m-js" or "" */
+let basePath = '';
 
 /** @type {((title: string) => string) | null} */
 let formatTitle = null;
@@ -20,6 +26,41 @@ let onChange = null;
 /** @type {Record<string, string>} */
 let params = {};
 
+/** Normalize to leading slash, no trailing slash (except root). */
+function normalizePath(uri) {
+  let p = (uri || '/').split('?')[0].split('#')[0] || '/';
+  if (!p.startsWith('/')) p = '/' + p;
+  if (p.length > 1) p = p.replace(/\/+$/, '');
+  return p || '/';
+}
+
+/**
+ * Strip basePath from a browser pathname → app route.
+ * @param {string} pathname
+ */
+function stripBase(pathname) {
+  let path = pathname || '/';
+  if (basePath) {
+    if (path === basePath || path === basePath + '/') {
+      path = '/';
+    } else if (path.startsWith(basePath + '/')) {
+      path = path.slice(basePath.length) || '/';
+    }
+  }
+  return normalizePath(path);
+}
+
+/**
+ * App route → full browser path (with base).
+ * @param {string} uri
+ */
+function withBase(uri) {
+  const path = normalizePath(uri);
+  if (!basePath) return path === '/' ? '/' : path;
+  if (path === '/') return basePath + '/';
+  return basePath + path;
+}
+
 export class Router {
   static get uri() {
     return currentUri;
@@ -27,6 +68,68 @@ export class Router {
 
   static get params() {
     return params;
+  }
+
+  /** Current site base (e.g. "/m-js" on GitHub Pages), or "". */
+  static get base() {
+    return basePath;
+  }
+
+  /**
+   * Set URL base prefix for subdirectory hosting (no trailing slash).
+   * @param {string} base  e.g. "/m-js"
+   */
+  static setBase(base) {
+    basePath = (base || '').replace(/\/+$/, '');
+    if (basePath === '/') basePath = '';
+  }
+
+  /**
+   * Infer base from the entry module script URL, &lt;base href&gt;, or github.io.
+   * Example: script at /m-js/app.js → base "/m-js".
+   * @returns {string}
+   */
+  static detectBase() {
+    const basetag = document.querySelector('base[href]');
+    if (basetag) {
+      try {
+        const u = new URL(/** @type {HTMLBaseElement} */ (basetag).href, location.origin);
+        const dir = u.pathname.replace(/\/+$/, '');
+        if (dir && dir !== '/') {
+          Router.setBase(dir);
+          return basePath;
+        }
+      } catch (_) {}
+    }
+
+    const scripts = document.querySelectorAll(
+      'script[type="module"][src], script[data-hmr-entry][src]',
+    );
+    for (const s of scripts) {
+      const src = s.getAttribute('src');
+      if (!src || src.startsWith('data:')) continue;
+      try {
+        const u = new URL(src, location.href);
+        if (u.origin !== location.origin) continue;
+        const dir = u.pathname.replace(/\/[^/]*$/, '');
+        if (dir && dir !== '/') {
+          Router.setBase(dir);
+          return basePath;
+        }
+      } catch (_) {}
+    }
+
+    // github.io project pages: /<repo>/...
+    if (/\.github\.io$/i.test(location.hostname)) {
+      const parts = location.pathname.split('/').filter(Boolean);
+      if (parts.length >= 1) {
+        Router.setBase('/' + parts[0]);
+        return basePath;
+      }
+    }
+
+    Router.setBase('');
+    return '';
   }
 
   /**
@@ -50,12 +153,12 @@ export class Router {
    * @param {Function} fn
    */
   static register(uri, title, fn) {
-    // Convert :param segments to named capture groups
-    const pattern = uri
+    const path = normalizePath(uri);
+    const pattern = path
       .replace(/\//g, '\\/')
       .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '(?<$1>[^/]+)');
-    routes.set(uri, {
-      uri,
+    routes.set(path, {
+      uri: path,
       title,
       rx: new RegExp(`^${pattern}$`),
       fn,
@@ -74,8 +177,9 @@ export class Router {
    * @returns {{ route: object, params: Record<string,string> } | null}
    */
   static match(uri) {
+    const path = normalizePath(uri);
     for (const route of routes.values()) {
-      const m = uri.match(route.rx);
+      const m = path.match(route.rx);
       if (m) {
         return {
           route,
@@ -91,14 +195,11 @@ export class Router {
   }
 
   /**
-   * Navigate to uri (pushState + redraw).
+   * Navigate to app uri (pushState + redraw). Pass app paths like "/" or "/guide".
    * @param {string} uri
    */
   static set(uri) {
-    const path = uri.split('?')[0].split('#')[0] || '/';
-    if (currentUri === path && Object.keys(params).length === 0) {
-      // still allow first paint
-    }
+    const path = normalizePath(uri);
     const matched = Router.match(path);
     if (!matched) {
       console.warn(`[m.Router] 404: ${path}`);
@@ -116,8 +217,8 @@ export class Router {
     if (typeof title === 'string' && title) {
       document.title = title;
     }
-    const full = uri.startsWith('/') ? uri : path;
-    if (window.location.pathname + window.location.search !== full) {
+    const full = withBase(path);
+    if (window.location.pathname !== full) {
       window.history.pushState(null, title || '', full);
     }
     onChange?.();
@@ -135,7 +236,7 @@ export class Router {
           <div class="p-12 text-center">
             <h1 class="text-4xl font-bold text-pink-400 mb-4">404</h1>
             <p class="text-cyan-200/70 mb-6">No route for <code class="text-cyan-300">${escapeHtml(currentUri)}</code></p>
-            <a href="/" class="text-cyan-400 underline" m-on:click="goHome">Go home</a>
+            <a href="${withBase('/')}" class="text-cyan-400 underline" @click="goHome">Go home</a>
           </div>
         `,
         goHome(e) {
@@ -152,7 +253,7 @@ export class Router {
   }
 
   static syncFromLocation() {
-    const path = window.location.pathname || '/';
+    const path = stripBase(window.location.pathname || '/');
     const matched = Router.match(path);
     currentUri = path;
     params = matched?.params ?? {};
@@ -165,7 +266,7 @@ export class Router {
   }
 
   /**
-   * Click handler for internal links — use as m-on:click or onclick.
+   * Click handler for internal links — use as @click or m-on:click.
    * @param {MouseEvent} e
    */
   static link(e) {
@@ -175,22 +276,35 @@ export class Router {
     const href = el.getAttribute?.('href');
     if (href == null) return;
     if (RX_ABSOLUTE_URL.test(href) || href.startsWith('mailto:') || href.startsWith('tel:')) {
-      return; // let browser handle absolute
+      return;
     }
     e.preventDefault();
     e.stopPropagation();
+    // Accept both app paths ("/guide") and base-prefixed ("/m-js/guide")
+    let appPath = href;
+    if (basePath && (href === basePath || href === basePath + '/' || href.startsWith(basePath + '/'))) {
+      appPath = stripBase(href);
+    }
     if (e.ctrlKey || e.metaKey) {
-      window.open(`${window.location.origin}${href}`);
+      window.open(`${window.location.origin}${withBase(appPath)}`);
     } else {
-      Router.set(href);
+      Router.set(appPath);
     }
     return false;
   }
 
+  /**
+   * Prefix an app path for use in href attributes.
+   * @param {string} uri
+   */
+  static href(uri) {
+    return withBase(uri);
+  }
+
   static start() {
+    if (!basePath) Router.detectBase();
     window.addEventListener('popstate', Router._popstate, false);
-    // Initial sync without double-push
-    const path = window.location.pathname || '/';
+    const path = stripBase(window.location.pathname || '/');
     const matched = Router.match(path);
     currentUri = path;
     params = matched?.params ?? {};
@@ -198,6 +312,11 @@ export class Router {
       let title = matched.route.title;
       if (typeof formatTitle === 'function') title = formatTitle(title);
       if (typeof title === 'string' && title) document.title = title;
+      // Keep address bar under base (e.g. /m-js/ not bare host path)
+      const full = withBase(path);
+      if (window.location.pathname !== full) {
+        window.history.replaceState(null, title || '', full);
+      }
     }
   }
 
@@ -214,6 +333,7 @@ export class Router {
     routes.clear();
     currentUri = '';
     params = {};
+    // keep basePath across reset (HMR re-registers routes)
   }
 }
 

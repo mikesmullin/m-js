@@ -4,11 +4,11 @@
 import { Router } from '../m/router.js';
 
 const NAV = [
-  { href: '/', label: 'Home', icon: 'house' },
-  { href: '/guide', label: 'Guide', icon: 'book-open-text', match: '/guide' },
-  { href: '/api', label: 'API', icon: 'code', match: '/api' },
-  { href: '/storybook', label: 'Storybook', icon: 'squares-four', match: '/storybook' },
-  { href: '/hmr', label: 'HMR Demo', icon: 'lightning', match: '/hmr' },
+  { path: '/', label: 'Home', icon: 'house' },
+  { path: '/guide', label: 'Guide', icon: 'book-open-text', match: '/guide' },
+  { path: '/api', label: 'API', icon: 'code', match: '/api' },
+  { path: '/storybook', label: 'Storybook', icon: 'squares-four', match: '/storybook' },
+  { path: '/hmr', label: 'HMR Demo', icon: 'lightning', match: '/hmr' },
 ];
 
 export default function Layout(attrs = {}) {
@@ -24,7 +24,7 @@ export default function Layout(attrs = {}) {
                 <span class="font-mono font-bold text-cyan-300 text-lg">m</span>
               </div>
               <div>
-                <a href="/" class="font-semibold text-lg tracking-tight text-white hover:text-cyan-300 transition" @click="go">m.js</a>
+                <a :href="homeHref" class="font-semibold text-lg tracking-tight text-white hover:text-cyan-300 transition" @click="go">m.js</a>
                 <div class="text-xs text-cyan-400/70 font-mono">v3.0.0</div>
               </div>
             </header>
@@ -62,15 +62,23 @@ export default function Layout(attrs = {}) {
         </div>
       </div>
     `,
-    navItems: NAV,
     page,
+    get homeHref() {
+      return Router.href('/');
+    },
+    get navItems() {
+      return NAV.map((item) => ({
+        ...item,
+        href: Router.href(item.path),
+      }));
+    },
     get hmrStatus() {
       return document.documentElement.dataset.hmr || '…';
     },
     isActive(item) {
       const uri = Router.uri;
       if (item.match) return uri === item.match || uri.startsWith(item.match + '/');
-      return uri === item.href;
+      return uri === item.path;
     },
     go: Router.link,
   };

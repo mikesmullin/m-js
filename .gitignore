@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.bun/
+package-lock.json
+
+# Build / cache
+dist/
+build/
+.cache/
+*.tsbuildinfo
+
+# Logs & debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.sublime-*
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Local scratch (cloned references, prompts, etc.)
+/tmp/
+tmp/
+
+# Misc
+*.local
+.direnv/
+.vercel
+.netlify

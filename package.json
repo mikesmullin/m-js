@@ -1,0 +1,32 @@
+{
+  "name": "m-js",
+  "version": "3.0.0",
+  "description": "A minimalist UI component framework for the web — Alpine-inspired templates, Zustand-like store, built-in Router & HMR.",
+  "type": "module",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./m": "./src/m.js",
+    "./router": "./src/router.js",
+    "./store": "./src/store.js",
+    "./hot-client": "./src/hot-client.js"
+  },
+  "scripts": {
+    "dev": "bun run src/server.js",
+    "start": "bun run src/server.js"
+  },
+  "keywords": [
+    "ui",
+    "component",
+    "framework",
+    "hmr",
+    "router",
+    "store"
+  ],
+  "author": "Mike Smullin",
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^4.0.3"
+  }
+}

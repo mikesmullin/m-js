@@ -127,7 +127,12 @@ export function reactive(target) {
       if (key === RAW) return obj;
       track(obj, key);
       const val = Reflect.get(obj, key, receiver);
-      // Bind methods once and cache (avoid new function identity every get)
+      // Bind methods once and cache (avoid new function identity every get).
+      // Always bind to *this* reactive proxy — not `receiver`.
+      // x-for / nested scopes use Object.create(proxy); lookups then hit this
+      // trap with receiver === childScope. Binding to receiver would make
+      // `this.foo = …` write onto the per-item scope instead of the store,
+      // so sidebar history / shared state never updates (until full reload).
       if (
         typeof val === 'function' &&
         Object.prototype.hasOwnProperty.call(obj, key)
@@ -137,7 +142,7 @@ export function reactive(target) {
           cache = new Map();
           boundMethodCache.set(obj, cache);
         }
-        if (!cache.has(key)) cache.set(key, val.bind(receiver));
+        if (!cache.has(key)) cache.set(key, val.bind(proxy));
         return cache.get(key);
       }
       return val;

@@ -9,32 +9,9 @@ const DEFAULT_SOURCE = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Counter</title>
   <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: system-ui, sans-serif;
-      background: #0a0a1a;
-      color: #e2e8f0;
-    }
-    button {
-      font: inherit;
-      font-size: 1.35rem;
-      font-weight: 600;
-      min-width: 4rem;
-      padding: 0.85rem 1.5rem;
-      border-radius: 0.75rem;
-      border: 1px solid rgba(34, 211, 238, 0.45);
-      background: rgba(34, 211, 238, 0.15);
-      color: #67e8f9;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-    }
-    button:hover { background: rgba(34, 211, 238, 0.28); }
-    button:active { transform: scale(0.97); }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px system-ui, sans-serif; background: #0a0a1a; color: #e2e8f0; }
+    button { font: inherit; padding: .6rem 1rem; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: inherit; cursor: pointer; }
   </style>
 </head>
 <body>

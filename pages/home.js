@@ -5,20 +5,30 @@ import { Router } from '../dist/m.min.js';
 
 const CDN_URL = 'https://mikesmullin.github.io/m-js/dist/m.min.js';
 
-/** Editor shows only the module script — the interesting part to copy. */
-const DEFAULT_SOURCE = `<script type="module">
-  import M from '${CDN_URL}'
+/**
+ * Editor example: real page skeleton (doctype/html/body/#app) + the module
+ * script. Meta/charset and styles are intentionally omitted — the preview
+ * injects minimal styles so the demo stays focused on m.js usage.
+ */
+const DEFAULT_SOURCE = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import M from '${CDN_URL}'
 
-  M.mount('#app', () => ({
-    count: 0,
-    template: \`
-      <button type="button" @click="count++" x-text="count">0</button>
-    \`,
-  }))
-</script>
+    M.mount('#app', () => ({
+      count: 0,
+      template: \`
+        <button type="button" @click="count++" x-text="count">0</button>
+      \`,
+    }))
+  </script>
+</body>
+</html>
 `;
 
-/** Implicit preview chrome (not shown in the editor). */
+/** Implicit preview styles only (not shown in the editor). */
 const PREVIEW_STYLES =
   'body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px system-ui,sans-serif;background:#0a0a1a;color:#e2e8f0}' +
   'button{font:inherit;padding:.6rem 1rem;border:1px solid #334155;border-radius:6px;background:#1e293b;color:inherit;cursor:pointer}';
@@ -55,9 +65,9 @@ function injectBridge(html) {
 }
 
 /**
- * Build a full preview document from editor source.
- * Fragments (the default script-only example) get an implicit shell with
- * styles + #app. Full HTML documents are used as-is (styles still injected).
+ * Build a preview document from editor source.
+ * Always injects minimal styles (and an error bridge). Full documents are
+ * left otherwise intact; bare fragments still get a small shell.
  */
 function buildPreviewHtml(source) {
   const src = (source || '').trim();
@@ -69,12 +79,13 @@ function buildPreviewHtml(source) {
     if (/<head[^>]*>/i.test(html)) {
       html = html.replace(/<head[^>]*>/i, (m) => `${m}\n${styleTag}`);
     } else {
+      // No <head> in the example — add one so preview styles apply.
       html = html.replace(/<html[^>]*>/i, (m) => `${m}\n<head>${styleTag}</head>`);
     }
     return injectBridge(html);
   }
 
-  // Script- or fragment-focused example: provide mount target + chrome.
+  // Fragment: wrap with a minimal shell so the preview still works.
   const body = /id\s*=\s*["']app["']/.test(src)
     ? src
     : `<div id="app"></div>\n${src}`;
@@ -208,8 +219,8 @@ export default function Home() {
             </div>
           </div>
           <p class="text-xs text-slate-500">
-            Edit the module script on the left — the sandboxed preview updates as you type
-            (styles and <code class="text-cyan-300">#app</code> are provided for you).
+            Edit the example on the left — the sandboxed preview updates as you type
+            (minimal styles are applied in the preview only).
             Errors appear above the preview (no DevTools needed).
           </p>
         </section>

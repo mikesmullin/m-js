@@ -64,7 +64,7 @@ export default function Layout(attrs = {}) {
         </aside>
 
         <div class="flex-1 min-w-0 flex flex-col">
-          <main class="flex-1 px-6 py-8 lg:px-10 lg:py-10 max-w-5xl w-full mx-auto" m-mount="page"></main>
+          <main class="flex-1 px-6 py-8 lg:px-10 lg:py-10 max-w-7xl w-full mx-auto" m-mount="page"></main>
           <footer class="px-6 py-6 text-center text-xs text-slate-600 border-t border-cyan-500/5">
             License MIT · m.js v3
           </footer>

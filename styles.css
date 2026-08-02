@@ -335,3 +335,122 @@ html[data-hmr="disconnected"] .hmr-dot {
 /* m-cloak hide until processed */
 [m-cloak] { display: none !important; }
 
+/* ------------------------------------------------------------------ */
+/* Home playground — CodeMirror + sandboxed live preview              */
+/* ------------------------------------------------------------------ */
+
+.cdn-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.cdn-url {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.5rem;
+  background: rgba(10, 10, 26, 0.9);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  color: #67e8f9;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.copy-btn {
+  flex-shrink: 0;
+}
+
+.playground-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  min-height: 22rem;
+}
+
+@media (min-width: 900px) {
+  .playground-grid {
+    grid-template-columns: 1fr 1fr;
+    min-height: 26rem;
+  }
+}
+
+.playground-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 20rem;
+  background: rgba(10, 10, 26, 0.92);
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-radius: 0.85rem;
+  overflow: hidden;
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.06);
+}
+
+.playground-pane-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(103, 232, 249, 0.75);
+  border-bottom: 1px solid rgba(34, 211, 238, 0.12);
+  background: rgba(18, 18, 42, 0.85);
+}
+
+.playground-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.playground-editor .cm-editor {
+  height: 100%;
+  outline: none;
+}
+
+.playground-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.playground-fallback {
+  width: 100%;
+  height: 100%;
+  min-height: 18rem;
+  box-sizing: border-box;
+  padding: 0.85rem 1rem;
+  border: 0;
+  resize: vertical;
+  background: #0a0a1a;
+  color: #a5f3fc;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.playground-error {
+  margin: 0.65rem 0.75rem 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(244, 114, 182, 0.45);
+  background: rgba(244, 114, 182, 0.12);
+  color: #f9a8d4;
+  font-size: 0.78rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.playground-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 16rem;
+  border: 0;
+  background: #0a0a1a;
+}
+

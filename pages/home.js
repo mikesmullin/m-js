@@ -1,7 +1,103 @@
+/**
+ * Docs home — CDN drop-in + live editable playground
+ */
 import { Router } from '../dist/m.min.js';
+
+const CDN_URL = 'https://mikesmullin.github.io/m-js/dist/m.min.js';
+
+const DEFAULT_SOURCE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Counter</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, sans-serif;
+      background: #0a0a1a;
+      color: #e2e8f0;
+    }
+    button {
+      font: inherit;
+      font-size: 1.35rem;
+      font-weight: 600;
+      min-width: 4rem;
+      padding: 0.85rem 1.5rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(34, 211, 238, 0.45);
+      background: rgba(34, 211, 238, 0.15);
+      color: #67e8f9;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    button:hover { background: rgba(34, 211, 238, 0.28); }
+    button:active { transform: scale(0.97); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import M from '${CDN_URL}'
+
+    M.mount('#app', () => ({
+      count: 0,
+      template: \`
+        <button type="button" @click="count++" x-text="count">0</button>
+      \`,
+    }))
+  </script>
+</body>
+</html>
+`;
+
+/** Injected into the preview iframe so runtime/syntax errors report to the parent. */
+const ERROR_BRIDGE = `
+<script>
+(function () {
+  function report(msg) {
+    try {
+      parent.postMessage({ source: 'm-playground', type: 'error', message: String(msg) }, '*');
+    } catch (_) {}
+  }
+  window.addEventListener('error', function (e) {
+    report(e.message || (e.error && e.error.message) || e.error || 'Script error');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    report(r && r.message ? r.message : r || 'Unhandled rejection');
+  });
+})();
+</script>
+`;
+
+function injectBridge(html) {
+  const bridge = ERROR_BRIDGE.trim();
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (m) => `${m}\n${bridge}`);
+  }
+  if (/<html[^>]*>/i.test(html)) {
+    return html.replace(/<html[^>]*>/i, (m) => `${m}\n<head>${bridge}</head>`);
+  }
+  return `${bridge}\n${html}`;
+}
 
 export default function Home() {
   return {
+    cdnUrl: CDN_URL,
+    copied: false,
+    error: '',
+    source: DEFAULT_SOURCE,
+
+    _view: null,
+    _frame: null,
+    _debounce: null,
+    _copyTimer: null,
+    _onMessage: null,
+    _cmLoading: false,
+
     template: `
       <article class="space-y-10">
         <header class="space-y-4">
@@ -47,25 +143,209 @@ export default function Home() {
           </div>
         </section>
 
-        <section class="space-y-3">
-          <h2 class="text-xl font-semibold text-cyan-200">Hello, Alpine-style</h2>
-          <pre class="code-block"><code><span class="cm">// components/card.js</span>
-<span class="kw">export default</span> () => ({
-  template: \`
-    &lt;div x-data="{ name: '' }"&gt;
-      &lt;input x-model="name" placeholder="Your name" /&gt;
-      &lt;p x-text="'Hi ' + name"&gt;&lt;/p&gt;
-      &lt;button @click="alert('Hi ' + name)"&gt;Alert&lt;/button&gt;
-    &lt;/div&gt;
-  \`,
-})
+        <section id="home-playground" class="space-y-4">
+          <header class="space-y-3">
+            <h2 class="text-xl font-semibold text-cyan-200">Hello, Alpine-style</h2>
+            <div class="text-sm text-slate-400 space-y-1 leading-relaxed">
+              <p>Drop the minified ESM build onto any page — no install required.</p>
+              <p>Served from GitHub Pages at</p>
+              <div class="cdn-url-row">
+                <code class="cdn-url" x-text="cdnUrl"></code>
+                <button
+                  type="button"
+                  class="m-btn m-btn-secondary m-btn-sm copy-btn"
+                  @click="copyCdn"
+                  :title="copied ? 'Copied!' : 'Copy URL'"
+                >
+                  <i class="ph" :class="copied ? 'ph-check-circle text-green-400' : 'ph-copy'"></i>
+                  <span x-text="copied ? 'Copied' : 'Copy'"></span>
+                </button>
+              </div>
+            </div>
+          </header>
 
-<span class="cm">// or register once</span>
-M.data(<span class="str">'card'</span>, () => ({ name: <span class="str">''</span> }))
-<span class="cm">// &lt;div x-data="card"&gt;...&lt;/div&gt;</span></code></pre>
+          <div class="playground-grid">
+            <div class="playground-pane">
+              <div class="playground-pane-label">
+                <i class="ph ph-code"></i> Edit
+              </div>
+              <div class="playground-editor" data-editor></div>
+            </div>
+            <div class="playground-pane">
+              <div class="playground-pane-label">
+                <i class="ph ph-eye"></i> Preview
+              </div>
+              <div
+                class="playground-error"
+                x-show="error"
+                x-text="error"
+              ></div>
+              <iframe
+                class="playground-frame"
+                data-preview
+                title="Live preview"
+                sandbox="allow-scripts"
+              ></iframe>
+            </div>
+          </div>
+          <p class="text-xs text-slate-500">
+            Edit the HTML on the left — the sandboxed preview updates as you type.
+            Errors appear above the preview (no DevTools needed).
+          </p>
         </section>
       </article>
     `,
+
     go: Router.link,
+
+    init() {
+      // Defer until the m-mount host has painted our template
+      queueMicrotask(() => this.setupPlayground());
+    },
+
+    async copyCdn() {
+      try {
+        await navigator.clipboard.writeText(this.cdnUrl);
+        this.copied = true;
+        clearTimeout(this._copyTimer);
+        this._copyTimer = setTimeout(() => {
+          this.copied = false;
+        }, 1600);
+      } catch {
+        this.error = 'Could not copy to clipboard — select the URL and copy manually.';
+      }
+    },
+
+    setupPlayground() {
+      const root = document.getElementById('home-playground');
+      if (!root) return;
+
+      const editorHost = root.querySelector('[data-editor]');
+      const frame = root.querySelector('[data-preview]');
+      if (!editorHost || !frame) return;
+
+      this._frame = /** @type {HTMLIFrameElement} */ (frame);
+
+      if (!this._onMessage) {
+        this._onMessage = (ev) => {
+          const data = ev.data;
+          if (!data || data.source !== 'm-playground') return;
+          if (data.type === 'error') {
+            this.error = data.message || 'Unknown error';
+          }
+        };
+        window.addEventListener('message', this._onMessage);
+      }
+
+      // Avoid double-mounting CodeMirror on the same host
+      if (editorHost.dataset.cmReady === '1' && this._view) {
+        this.refreshPreview();
+        return;
+      }
+
+      this.mountEditor(editorHost);
+    },
+
+    async mountEditor(host) {
+      if (this._cmLoading) return;
+      this._cmLoading = true;
+      try {
+        const [
+          { EditorView, basicSetup },
+          { html },
+          { oneDark },
+        ] = await Promise.all([
+          import('https://esm.sh/codemirror@6'),
+          import('https://esm.sh/@codemirror/lang-html@6'),
+          import('https://esm.sh/@codemirror/theme-one-dark@6'),
+        ]);
+
+        if (this._view) {
+          this._view.destroy();
+          this._view = null;
+        }
+        host.innerHTML = '';
+
+        const self = this;
+        this._view = new EditorView({
+          doc: this.source,
+          extensions: [
+            basicSetup,
+            html(),
+            oneDark,
+            EditorView.theme({
+              '&': {
+                height: '100%',
+                fontSize: '13px',
+              },
+              '.cm-scroller': {
+                fontFamily:
+                  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                lineHeight: '1.55',
+              },
+              '.cm-content': {
+                padding: '12px 0',
+              },
+            }),
+            EditorView.updateListener.of((update) => {
+              if (!update.docChanged) return;
+              self.source = update.state.doc.toString();
+              self.schedulePreview();
+            }),
+          ],
+          parent: host,
+        });
+
+        host.dataset.cmReady = '1';
+        this.refreshPreview();
+      } catch (e) {
+        this.error = `CodeMirror failed to load: ${e?.message || e}`;
+        if (!host.querySelector('textarea')) {
+          const ta = document.createElement('textarea');
+          ta.className = 'playground-fallback';
+          ta.value = this.source;
+          ta.addEventListener('input', () => {
+            this.source = ta.value;
+            this.schedulePreview();
+          });
+          host.appendChild(ta);
+          this.refreshPreview();
+        }
+      } finally {
+        this._cmLoading = false;
+      }
+    },
+
+    schedulePreview() {
+      clearTimeout(this._debounce);
+      this._debounce = setTimeout(() => this.refreshPreview(), 350);
+    },
+
+    refreshPreview() {
+      if (!this._frame) return;
+      this.error = '';
+      const html = this._view ? this._view.state.doc.toString() : this.source;
+      this.source = html;
+
+      try {
+        this._frame.srcdoc = injectBridge(html);
+      } catch (e) {
+        this.error = e?.message || String(e);
+      }
+    },
+
+    destroy() {
+      clearTimeout(this._debounce);
+      clearTimeout(this._copyTimer);
+      if (this._onMessage) {
+        window.removeEventListener('message', this._onMessage);
+        this._onMessage = null;
+      }
+      if (this._view) {
+        this._view.destroy();
+        this._view = null;
+      }
+      this._frame = null;
+    },
   };
 }

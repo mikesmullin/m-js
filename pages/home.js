@@ -84,6 +84,20 @@ function injectBridge(html) {
   return `${bridge}\n${html}`;
 }
 
+/** Active home playground instance — single window message listener. */
+let activePlayground = null;
+
+if (typeof window !== 'undefined' && !window.__M_PLAYGROUND_MSG__) {
+  window.__M_PLAYGROUND_MSG__ = true;
+  window.addEventListener('message', (ev) => {
+    const data = ev.data;
+    if (!data || data.source !== 'm-playground' || !activePlayground) return;
+    if (data.type === 'error') {
+      activePlayground.error = data.message || 'Unknown error';
+    }
+  });
+}
+
 export default function Home() {
   return {
     cdnUrl: CDN_URL,
@@ -95,7 +109,6 @@ export default function Home() {
     _frame: null,
     _debounce: null,
     _copyTimer: null,
-    _onMessage: null,
     _cmLoading: false,
 
     template: `
@@ -199,6 +212,7 @@ export default function Home() {
     go: Router.link,
 
     init() {
+      activePlayground = this;
       // Defer until the m-mount host has painted our template
       queueMicrotask(() => this.setupPlayground());
     },
@@ -217,6 +231,7 @@ export default function Home() {
     },
 
     setupPlayground() {
+      if (activePlayground !== this) return;
       const root = document.getElementById('home-playground');
       if (!root) return;
 
@@ -225,17 +240,6 @@ export default function Home() {
       if (!editorHost || !frame) return;
 
       this._frame = /** @type {HTMLIFrameElement} */ (frame);
-
-      if (!this._onMessage) {
-        this._onMessage = (ev) => {
-          const data = ev.data;
-          if (!data || data.source !== 'm-playground') return;
-          if (data.type === 'error') {
-            this.error = data.message || 'Unknown error';
-          }
-        };
-        window.addEventListener('message', this._onMessage);
-      }
 
       // Avoid double-mounting CodeMirror on the same host
       if (editorHost.dataset.cmReady === '1' && this._view) {
@@ -337,10 +341,7 @@ export default function Home() {
     destroy() {
       clearTimeout(this._debounce);
       clearTimeout(this._copyTimer);
-      if (this._onMessage) {
-        window.removeEventListener('message', this._onMessage);
-        this._onMessage = null;
-      }
+      if (activePlayground === this) activePlayground = null;
       if (this._view) {
         this._view.destroy();
         this._view = null;

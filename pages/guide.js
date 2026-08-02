@@ -95,7 +95,7 @@ M.mount(<span class="str">'#app'</span>)</code></pre>
     <span class="kw">import</span> M <span class="kw">from</span> <span class="str">'https://mikesmullin.github.io/m-js/dist/m.min.js'</span>
 
     M.mount(<span class="str">'#app'</span>, () =&gt; ({
-      template: `&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;`,
+      template: \`&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;\`,
     }))
   &lt;/script&gt;
 &lt;/body&gt;

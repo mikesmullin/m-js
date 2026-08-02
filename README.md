@@ -15,19 +15,65 @@ Zero runtime dependencies.
 | | |
 |--|--|
 | Framework docs | https://mikesmullin.github.io/m-js/ |
+| CDN (minified ESM) | https://mikesmullin.github.io/m-js/dist/m.min.js |
 | UI components storybook | https://mikesmullin.github.io/m-js-components/ |
 | Components source | https://github.com/mikesmullin/m-js-components |
 
-Docs are published from the orphan [`docs`](https://github.com/mikesmullin/m-js/tree/docs) branch. This `v3` branch is the framework only.
+Docs and the CDN bundle are published from the orphan [`docs`](https://github.com/mikesmullin/m-js/tree/docs) branch (GitHub Pages). This `v3` branch is the framework source.
 
-## Quick start
+## CDN (drop-in)
+
+Any site can load the cloud-hosted build — no install step:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hello</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import M, { Router } from 'https://mikesmullin.github.io/m-js/dist/m.min.js'
+
+    M.mount('#app', () => ({
+      template: `<h1 x-text="'Hello world'"></h1>`,
+    }))
+  </script>
+</body>
+</html>
+```
+
+Published files under `/dist/`:
+
+| File | Description |
+|------|-------------|
+| `m.js` | All-in-one ESM bundle (not minified) |
+| `m.min.js` | Minified ESM (preferred for production / CDN) |
+| `m.min.js.gz` | Same bytes, gzip-compressed (size / precompressed hosting) |
+
+## Quick start (local)
 
 ```bash
 bun install
 bun run dev
 ```
 
-## Hello world
+## Build & release
+
+```bash
+# Write dist/m.js, dist/m.min.js, dist/m.min.js.gz
+bun run build
+# or: bun build.mjs package
+
+# Tag, GitHub Release (with assets), push dist/ + docs to the docs branch
+bun run release
+# or: bun build.mjs release
+# or: bun build.mjs release 3.0.1
+```
+
+## Hello world (local modules)
 
 ```html
 <!DOCTYPE html>

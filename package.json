@@ -5,16 +5,31 @@
   "type": "module",
   "main": "src/index.js",
   "module": "src/index.js",
+  "browser": "dist/m.min.js",
+  "unpkg": "dist/m.min.js",
+  "jsdelivr": "dist/m.min.js",
   "exports": {
     ".": "./src/index.js",
     "./m": "./src/m.js",
     "./router": "./src/router.js",
     "./store": "./src/store.js",
-    "./hot-client": "./src/hot-client.js"
+    "./hot-client": "./src/hot-client.js",
+    "./browser": "./src/browser.js",
+    "./dist/m.js": "./dist/m.js",
+    "./dist/m.min.js": "./dist/m.min.js"
   },
+  "files": [
+    "src",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "dev": "bun run src/server.js",
     "start": "bun run src/server.js",
+    "build": "bun build.mjs package",
+    "package": "bun build.mjs package",
+    "release": "bun build.mjs release",
     "test": "bun test tests/",
     "test:watch": "bun test --watch tests/"
   },

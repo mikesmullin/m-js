@@ -1,4 +1,4 @@
-import { Router } from '../m/router.js';
+import { Router } from '../dist/m.min.js';
 
 export default function Guide() {
   return {
@@ -76,10 +76,12 @@ Router.register(<span class="str">'/'</span>, <span class="str">'Home'</span>, (
 M.mount(<span class="str">'#app'</span>)</code></pre>
         </section>
 
-        <section class="space-y-3">
-          <h2 class="text-xl font-semibold text-cyan-200">6. Hello world <code class="text-pink-300">index.html</code></h2>
+                <section class="space-y-3">
+          <h2 class="text-xl font-semibold text-cyan-200">6. Hello world (CDN)</h2>
           <p class="text-sm text-slate-400">
-            Smallest useful page — serve the project root so <code class="text-cyan-300">/src/index.js</code> resolves.
+            Drop the minified ESM build onto any page — no install required.
+            Served from GitHub Pages at
+            <code class="text-cyan-300">https://mikesmullin.github.io/m-js/dist/m.min.js</code>.
           </p>
           <pre class="code-block"><code>&lt;!DOCTYPE html&gt;
 &lt;html lang=<span class="str">"en"</span>&gt;
@@ -90,10 +92,10 @@ M.mount(<span class="str">'#app'</span>)</code></pre>
 &lt;body&gt;
   &lt;div id=<span class="str">"app"</span>&gt;&lt;/div&gt;
   &lt;script type=<span class="str">"module"</span>&gt;
-    <span class="kw">import</span> M <span class="kw">from</span> <span class="str">'/src/index.js'</span>
+    <span class="kw">import</span> M <span class="kw">from</span> <span class="str">'https://mikesmullin.github.io/m-js/dist/m.min.js'</span>
 
     M.mount(<span class="str">'#app'</span>, () =&gt; ({
-      template: \`&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;\`,
+      template: `&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;`,
     }))
   &lt;/script&gt;
 &lt;/body&gt;

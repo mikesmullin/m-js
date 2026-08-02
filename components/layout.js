@@ -1,7 +1,7 @@
 /**
  * Docs shell — framework docs nav (storybook is a separate repo)
  */
-import { Router } from '../m/router.js';
+import { Router } from '../dist/m.min.js';
 
 const NAV = [
   { path: '/', label: 'Home', icon: 'house' },

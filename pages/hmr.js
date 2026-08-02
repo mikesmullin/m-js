@@ -2,8 +2,8 @@
  * HMR + Store demo — M.store + x-* directives
  * JS stays thin; template owns the reactivity wiring.
  */
-import M from '../m/m.js';
-import { Router } from '../m/router.js';
+import M from '../dist/m.min.js';
+import { Router } from '../dist/m.min.js';
 
 // Global store — survives HMR (named bucket)
 M.store('hmrDemo', {

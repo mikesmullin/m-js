@@ -1,4 +1,4 @@
-import { Router } from '../m/router.js';
+import { Router } from '../dist/m.min.js';
 
 export default function Home() {
   return {

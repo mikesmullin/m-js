@@ -5,30 +5,23 @@ import { Router } from '../dist/m.min.js';
 
 const CDN_URL = 'https://mikesmullin.github.io/m-js/dist/m.min.js';
 
-const DEFAULT_SOURCE = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <style>
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px system-ui, sans-serif; background: #0a0a1a; color: #e2e8f0; }
-    button { font: inherit; padding: .6rem 1rem; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: inherit; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <div id="app"></div>
-  <script type="module">
-    import M from '${CDN_URL}'
+/** Editor shows only the module script — the interesting part to copy. */
+const DEFAULT_SOURCE = `<script type="module">
+  import M from '${CDN_URL}'
 
-    M.mount('#app', () => ({
-      count: 0,
-      template: \`
-        <button type="button" @click="count++" x-text="count">0</button>
-      \`,
-    }))
-  </script>
-</body>
-</html>
+  M.mount('#app', () => ({
+    count: 0,
+    template: \`
+      <button type="button" @click="count++" x-text="count">0</button>
+    \`,
+  }))
+</script>
 `;
+
+/** Implicit preview chrome (not shown in the editor). */
+const PREVIEW_STYLES =
+  'body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px system-ui,sans-serif;background:#0a0a1a;color:#e2e8f0}' +
+  'button{font:inherit;padding:.6rem 1rem;border:1px solid #334155;border-radius:6px;background:#1e293b;color:inherit;cursor:pointer}';
 
 /** Injected into the preview iframe so runtime/syntax errors report to the parent. */
 const ERROR_BRIDGE = `
@@ -59,6 +52,42 @@ function injectBridge(html) {
     return html.replace(/<html[^>]*>/i, (m) => `${m}\n<head>${bridge}</head>`);
   }
   return `${bridge}\n${html}`;
+}
+
+/**
+ * Build a full preview document from editor source.
+ * Fragments (the default script-only example) get an implicit shell with
+ * styles + #app. Full HTML documents are used as-is (styles still injected).
+ */
+function buildPreviewHtml(source) {
+  const src = (source || '').trim();
+  const styleTag = `<style>${PREVIEW_STYLES}</style>`;
+  const isFullDoc = /<!DOCTYPE/i.test(src) || /<html[\s>]/i.test(src);
+
+  if (isFullDoc) {
+    let html = src;
+    if (/<head[^>]*>/i.test(html)) {
+      html = html.replace(/<head[^>]*>/i, (m) => `${m}\n${styleTag}`);
+    } else {
+      html = html.replace(/<html[^>]*>/i, (m) => `${m}\n<head>${styleTag}</head>`);
+    }
+    return injectBridge(html);
+  }
+
+  // Script- or fragment-focused example: provide mount target + chrome.
+  const body = /id\s*=\s*["']app["']/.test(src)
+    ? src
+    : `<div id="app"></div>\n${src}`;
+
+  return injectBridge(`<!DOCTYPE html>
+<html lang="en">
+<head>
+${styleTag}
+</head>
+<body>
+${body}
+</body>
+</html>`);
 }
 
 /** Active home playground instance — single window message listener. */
@@ -179,7 +208,8 @@ export default function Home() {
             </div>
           </div>
           <p class="text-xs text-slate-500">
-            Edit the HTML on the left — the sandboxed preview updates as you type.
+            Edit the module script on the left — the sandboxed preview updates as you type
+            (styles and <code class="text-cyan-300">#app</code> are provided for you).
             Errors appear above the preview (no DevTools needed).
           </p>
         </section>
@@ -309,7 +339,7 @@ export default function Home() {
       this.source = html;
 
       try {
-        this._frame.srcdoc = injectBridge(html);
+        this._frame.srcdoc = buildPreviewHtml(html);
       } catch (e) {
         this.error = e?.message || String(e);
       }

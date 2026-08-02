@@ -601,13 +601,18 @@ function applyBinding(el, prop, result) {
         .filter(Boolean)
         .join(' ');
       el.setAttribute('class', merged);
-    } else if (result != null && result !== false) {
+    } else if (result != null && result !== false && result !== '') {
       const staticCls = el.getAttribute('data-static-class');
       const merged =
         staticCls != null
           ? `${staticCls} ${result}`.trim()
           : String(result);
       el.setAttribute('class', merged);
+    } else {
+      // false / null / undefined / '' → drop bound classes; keep static only.
+      // Without this, toggling `cond ? 'on' : ''` left `on` stuck on the element.
+      const staticCls = el.getAttribute('data-static-class') || '';
+      el.setAttribute('class', staticCls);
     }
   } else if (prop === 'style') {
     if (typeof result === 'object' && result) {
@@ -627,7 +632,16 @@ function applyBinding(el, prop, result) {
     if (!result) el.removeAttribute(prop);
     else el.setAttribute(prop, '');
   } else if (prop === 'value') {
-    if (/** @type {any} */ (el).value !== String(result ?? '')) {
+    if (el.tagName === 'OPTION') {
+      // <option>: always reflect to the attribute. The .value property falls
+      // back to the option's TEXT when the attribute is absent — so an
+      // empty-string binding on a not-yet-texted option reads as a no-op,
+      // never sets the attribute, and the value then silently tracks later
+      // x-text updates.
+      if (el.getAttribute('value') !== String(result ?? '')) {
+        el.setAttribute('value', String(result ?? ''));
+      }
+    } else if (/** @type {any} */ (el).value !== String(result ?? '')) {
       /** @type {any} */ (el).value = result ?? '';
     }
   } else if (result == null || result === false) {

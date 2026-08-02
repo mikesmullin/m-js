@@ -1,9 +1,11 @@
 /**
  * m.js docs site (orphan `docs` branch)
  * Framework documentation only — UI storybook lives at m-js-components.
- * Runtime is the published CDN bundle under ./dist/.
+ *
+ * Runtime is the cloud-hosted CDN bundle (same URL any site can copy-paste):
+ *   https://mikesmullin.github.io/m-js/dist/m.min.js
  */
-import M, { Router } from './dist/m.min.js';
+import M, { Router } from 'https://mikesmullin.github.io/m-js/dist/m.min.js';
 
 window.__M__ = { M, m: M, Router };
 

@@ -283,6 +283,7 @@ export default { boot };
     if (await exists(guidePath)) {
       let guide = await readFile(guidePath, 'utf8');
       // Replace the local /src/index.js hello-world block with CDN usage
+      // NOTE: guide.js itself is a JS template string — any nested ` must be \`-escaped.
       const cdnHello = `        <section class="space-y-3">
           <h2 class="text-xl font-semibold text-cyan-200">6. Hello world (CDN)</h2>
           <p class="text-sm text-slate-400">
@@ -302,7 +303,7 @@ export default { boot };
     <span class="kw">import</span> M <span class="kw">from</span> <span class="str">'${CDN_BASE}/dist/${DIST_FILES.min}'</span>
 
     M.mount(<span class="str">'#app'</span>, () =&gt; ({
-      template: \`&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;\`,
+      template: \\\`&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;\\\`,
     }))
   &lt;/script&gt;
 &lt;/body&gt;

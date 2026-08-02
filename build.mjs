@@ -551,41 +551,46 @@ async function cmdRelease(args) {
     `- \`${DIST_FILES.gz}\` — minified + gzip`,
   ].join('\n');
 
-  const notesFile = join(DIST, '.release-notes.md');
+  // Keep release notes outside dist/ so they are not published to GH Pages
+  const notesFile = join(ROOT, '.release-notes.md');
   await writeFile(notesFile, notes, 'utf8');
 
-  const releaseView = run('gh', ['release', 'view', tag], { allowFail: true });
-  if (releaseView.status === 0) {
-    log(`GitHub release ${tag} already exists — uploading assets`);
-    run(
-      'gh',
-      [
-        'release',
-        'upload',
-        tag,
-        join(DIST, DIST_FILES.raw),
-        join(DIST, DIST_FILES.min),
-        join(DIST, DIST_FILES.gz),
-        '--clobber',
-      ],
-    );
-  } else {
-    run(
-      'gh',
-      [
-        'release',
-        'create',
-        tag,
-        join(DIST, DIST_FILES.raw),
-        join(DIST, DIST_FILES.min),
-        join(DIST, DIST_FILES.gz),
-        '--title',
-        `m.js ${tag}`,
-        '--notes-file',
-        notesFile,
-      ],
-    );
-    log(`created GitHub release ${tag}`);
+  try {
+    const releaseView = run('gh', ['release', 'view', tag], { allowFail: true });
+    if (releaseView.status === 0) {
+      log(`GitHub release ${tag} already exists — uploading assets`);
+      run(
+        'gh',
+        [
+          'release',
+          'upload',
+          tag,
+          join(DIST, DIST_FILES.raw),
+          join(DIST, DIST_FILES.min),
+          join(DIST, DIST_FILES.gz),
+          '--clobber',
+        ],
+      );
+    } else {
+      run(
+        'gh',
+        [
+          'release',
+          'create',
+          tag,
+          join(DIST, DIST_FILES.raw),
+          join(DIST, DIST_FILES.min),
+          join(DIST, DIST_FILES.gz),
+          '--title',
+          `m.js ${tag}`,
+          '--notes-file',
+          notesFile,
+        ],
+      );
+      log(`created GitHub release ${tag}`);
+    }
+  } finally {
+    await rm(notesFile, { force: true });
   }
 
   // Publish to GH Pages (docs branch)

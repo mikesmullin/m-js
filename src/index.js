@@ -10,6 +10,9 @@ export {
   initTree,
   destroyTree,
   longestIncreasingSubsequence,
+  takeDrawCalls,
+  takePerfStats,
+  flushSync,
 } from './m.js';
 export { Router } from './router.js';
 export { createStore, clearStore } from './store.js';

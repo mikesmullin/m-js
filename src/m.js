@@ -72,23 +72,94 @@ function trigger(target, key) {
 
 /** @type {Set<Function>} */
 const queued = new Set();
-let flushScheduled = false;
+/**
+ * Mithril-style pending flag: at most one scheduled flush slot.
+ * While true, further scheduleEffect() only enqueue — they do not arm another rAF.
+ */
+let pending = false;
 /** Safety: max effect runs per flush cycle before we bail */
 const MAX_EFFECT_RUNS_PER_FLUSH = 1000;
 let runsThisFlush = 0;
 
+/**
+ * Perf counters since last takePerfStats() / takeDrawCalls().
+ *   flushes  — rAF-batched flushEffects() runs (≈ paints / frames; Mithril "redraws")
+ *   effects  — individual binding re-runs inside those flushes (fine-grained work)
+ *   redraws  — full M.redraw() tree rebuilds
+ */
+let flushCount = 0;
+let effectCount = 0;
+let redrawCount = 0;
+
+/**
+ * Schedule a callback on the next animation frame (Mithril uses rAF for m.redraw).
+ * Falls back to queueMicrotask when rAF is unavailable (some test envs).
+ * @param {FrameRequestCallback|(() => void)} cb
+ */
+function scheduleFrame(cb) {
+  const raf =
+    (typeof requestAnimationFrame === 'function' && requestAnimationFrame) ||
+    (typeof globalThis !== 'undefined' &&
+      typeof globalThis.requestAnimationFrame === 'function' &&
+      globalThis.requestAnimationFrame) ||
+    null;
+  if (raf) return raf.call(globalThis, /** @type {FrameRequestCallback} */ (cb));
+  return queueMicrotask(/** @type {() => void} */ (cb));
+}
+
+/**
+ * Snapshot + reset perf counters.
+ * @returns {{ flushes: number, effects: number, redraws: number }}
+ */
+export function takePerfStats() {
+  const s = {
+    flushes: flushCount,
+    effects: effectCount,
+    redraws: redrawCount,
+  };
+  flushCount = 0;
+  effectCount = 0;
+  redrawCount = 0;
+  return s;
+}
+
+/**
+ * Primary HUD metric: rAF flushes since last sample (expect ≤1 per display frame).
+ * @returns {number}
+ */
+export function takeDrawCalls() {
+  return takePerfStats().flushes;
+}
+
 function scheduleEffect(e) {
   queued.add(e);
-  if (!flushScheduled) {
-    flushScheduled = true;
-    runsThisFlush = 0;
-    queueMicrotask(flushEffects);
+  if (pending) return;
+  pending = true;
+  scheduleFrame(runScheduledFlush);
+}
+
+/**
+ * One rAF slot: drain all queued effects (including cascades), then clear pending.
+ * Matches Mithril: many data writes → one scheduled redraw per frame.
+ */
+function runScheduledFlush() {
+  runsThisFlush = 0;
+  try {
+    flushEffects();
+  } finally {
+    pending = false;
+    // Work queued in the gap after drain but before pending=false — re-arm once
+    if (queued.size > 0) {
+      pending = true;
+      scheduleFrame(runScheduledFlush);
+    }
   }
 }
 
 function flushEffects() {
-  flushScheduled = false;
-  // Drain in waves so newly scheduled work still runs, but cap total runs
+  if (queued.size === 0) return;
+  flushCount++;
+  // Drain in waves so newly scheduled work in this frame still runs here
   while (queued.size > 0) {
     const list = [...queued];
     queued.clear();
@@ -101,11 +172,26 @@ function flushEffects() {
         return;
       }
       try {
+        effectCount++;
         e();
       } catch (err) {
         console.error('[m] effect error', err);
       }
     }
+  }
+}
+
+/** Force an immediate flush (tests / sync paths). Still counts as one flush. */
+export function flushSync() {
+  if (queued.size === 0 && !pending) return;
+  // Cancel the notion of a pending frame — we drain now
+  pending = false;
+  runsThisFlush = 0;
+  flushEffects();
+  // If something re-queued during sync flush, arm a normal frame (not recursive sync)
+  if (queued.size > 0 && !pending) {
+    pending = true;
+    scheduleFrame(runScheduledFlush);
   }
 }
 
@@ -1740,6 +1826,9 @@ export const M = {
     if (alreadyRedrawing) return;
     alreadyRedrawing = true;
     try {
+      // Full tree rebuild — counts as one redraw (and one flush slot for HUD)
+      redrawCount++;
+      flushCount++;
       if (!rootEl || !rootFactory) return;
 
       const active = document.activeElement;
@@ -1805,9 +1894,10 @@ export const M = {
   },
 
   deferredBatchRedraw() {
+    // Same rAF coalescing as effect flushes (Mithril m.redraw pending flag)
     if (deferredQueued) return;
     deferredQueued = true;
-    queueMicrotask(() => {
+    scheduleFrame(() => {
       deferredQueued = false;
       M.redraw();
     });
@@ -1820,6 +1910,13 @@ export const M = {
   get renderCount() {
     return renderCount;
   },
+  /** @deprecated use takePerfStats().flushes — rAF flush count since last sample */
+  get drawCallCount() {
+    return flushCount;
+  },
+  takeDrawCalls,
+  takePerfStats,
+  flushSync,
   get root() {
     return rootInstance;
   },

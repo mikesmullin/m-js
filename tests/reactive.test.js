@@ -116,4 +116,26 @@ describe('effect()', () => {
     expect(runs).toBeGreaterThanOrEqual(2);
     expect(runs).toBeLessThanOrEqual(3);
   });
+
+  test('coalesces many writes into one rAF flush slot', async () => {
+    const { takePerfStats } = await import('../src/m.js');
+    takePerfStats(); // reset
+    const state = reactive({ n: 0 });
+    let runs = 0;
+    effect(() => {
+      void state.n;
+      runs++;
+    });
+    await flush();
+    takePerfStats(); // drop initial mount flush
+    const before = runs;
+    for (let i = 0; i < 20; i++) state.n = i;
+    await flush();
+    const stats = takePerfStats();
+    // One rAF flush for the whole burst (Mithril-style pending flag)
+    expect(stats.flushes).toBe(1);
+    // Effect may re-run once (or a couple waves) — not once per write
+    expect(runs - before).toBeLessThanOrEqual(3);
+    expect(runs - before).toBeGreaterThanOrEqual(1);
+  });
 });

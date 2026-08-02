@@ -75,12 +75,20 @@ export function uninstallDom() {
 }
 
 /**
- * Flush microtasks + macrotasks (effects, nextTick, timers).
+ * Flush microtasks + macrotasks + rAF (effects schedule on requestAnimationFrame).
  * @param {number} [times]
  */
 export async function flush(times = 3) {
   for (let i = 0; i < times; i++) {
     await Promise.resolve();
+    // Drain rAF callbacks (happy-dom / polyfill often uses setTimeout(0))
+    await new Promise((r) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => r(undefined));
+      } else {
+        setTimeout(r, 0);
+      }
+    });
     await new Promise((r) => setTimeout(r, 0));
   }
 }

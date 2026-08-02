@@ -584,42 +584,186 @@ function dirPriority(type) {
 // Apply bindings
 // ---------------------------------------------------------------------------
 
+// Alpine-style undo registries: each re-bind removes what the previous run
+// added, so static HTML classes/styles are never frozen into a "static"
+// snapshot (the old data-static-class approach broke when :style registered
+// after :class had already painted dynamic tokens like `collapsed`).
+/** @type {WeakMap<Element, () => void>} */
+const boundClassUndo = new WeakMap();
+/** @type {WeakMap<Element, () => void>} */
+const boundStyleUndo = new WeakMap();
+
+function splitClassTokens(s) {
+  return String(s || '')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Alpine setClassesFromString: only add tokens not already on the element;
+ * return an undo that removes exactly those added tokens.
+ * @param {Element} el
+ * @param {string} classString
+ * @returns {() => void}
+ */
+function setClassesFromString(el, classString) {
+  // Allow short-circuit forms like Alpine: true → ''
+  if (classString === true) classString = '';
+  const want = splitClassTokens(classString || '');
+  // Prefer className string math over classList: some happy-dom versions
+  // silently no-op classList.add while an attribute-bind effect is live.
+  const beforeTokens = splitClassTokens(el.getAttribute('class') || el.className || '');
+  const beforeSet = new Set(beforeTokens);
+  const toAdd = want.filter((t) => !beforeSet.has(t));
+  if (toAdd.length) {
+    const next = [...beforeTokens, ...toAdd].join(' ');
+    el.setAttribute('class', next);
+    if (globalThis.__m_debug_class) {
+      console.log('[setClassesFromString]', {
+        classString,
+        beforeTokens,
+        toAdd,
+        next,
+        afterAttr: el.getAttribute('class'),
+        afterClassName: el.className,
+      });
+    }
+  }
+  return () => {
+    if (!toAdd.length) return;
+    const drop = new Set(toAdd);
+    const cur = splitClassTokens(el.getAttribute('class') || el.className || '');
+    el.setAttribute('class', cur.filter((t) => !drop.has(t)).join(' '));
+  };
+}
+
+/**
+ * Alpine setClassesFromObject: add tokens for truthy keys, remove for falsy;
+ * undo restores the prior presence of those tokens.
+ * @param {Element} el
+ * @param {Record<string, any>} classObject
+ * @returns {() => void}
+ */
+function setClassesFromObject(el, classObject) {
+  const forAdd = Object.entries(classObject)
+    .flatMap(([classString, on]) => (on ? splitClassTokens(classString) : []))
+    .filter(Boolean);
+  const forRemove = Object.entries(classObject)
+    .flatMap(([classString, on]) => (!on ? splitClassTokens(classString) : []))
+    .filter(Boolean);
+
+  const tokens = splitClassTokens(el.getAttribute('class') || el.className || '');
+  const set = new Set(tokens);
+  /** @type {string[]} */
+  const added = [];
+  /** @type {string[]} */
+  const removed = [];
+
+  for (const t of forRemove) {
+    if (set.has(t)) {
+      set.delete(t);
+      removed.push(t);
+    }
+  }
+  for (const t of forAdd) {
+    if (!set.has(t)) {
+      set.add(t);
+      added.push(t);
+    }
+  }
+  el.setAttribute('class', [...set].join(' '));
+
+  return () => {
+    const cur = new Set(splitClassTokens(el.getAttribute('class') || el.className || ''));
+    for (const t of removed) cur.add(t);
+    for (const t of added) cur.delete(t);
+    el.setAttribute('class', [...cur].join(' '));
+  };
+}
+
+/**
+ * @param {Element} el
+ * @param {any} result
+ */
+function applyClassBinding(el, result) {
+  const prev = boundClassUndo.get(el);
+  if (prev) prev();
+
+  let undo = () => {};
+  if (typeof result === 'function') {
+    // Alpine allows :class="() => …" — evaluate once per bind tick
+    applyClassBinding(el, result());
+    return;
+  }
+  if (typeof result === 'object' && result && !Array.isArray(result)) {
+    undo = setClassesFromObject(el, result);
+  } else if (Array.isArray(result)) {
+    undo = setClassesFromString(el, result.filter(Boolean).join(' '));
+  } else if (result != null && result !== false && result !== '') {
+    undo = setClassesFromString(el, String(result));
+  }
+  // false / null / undefined / '' → undo only (drop previously bound tokens)
+  boundClassUndo.set(el, undo);
+}
+
+function kebabCaseStyle(key) {
+  if (key.startsWith('--')) return key; // CSS custom properties stay as-is
+  return String(key).replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+}
+
+/**
+ * Alpine setStylesFromObject: setProperty each key; undo restores prior values.
+ * @param {HTMLElement} el
+ * @param {Record<string, any>} value
+ * @returns {() => void}
+ */
+function setStylesFromObject(el, value) {
+  /** @type {Record<string, string>} */
+  const previous = {};
+  for (const [rawKey, rawVal] of Object.entries(value || {})) {
+    const key = kebabCaseStyle(rawKey);
+    previous[key] = el.style.getPropertyValue(key);
+    if (rawVal == null || rawVal === false || rawVal === '') {
+      el.style.removeProperty(key);
+    } else {
+      el.style.setProperty(key, String(rawVal));
+    }
+  }
+  return () => {
+    for (const [key, prev] of Object.entries(previous)) {
+      if (prev) el.style.setProperty(key, prev);
+      else el.style.removeProperty(key);
+    }
+  };
+}
+
+/**
+ * @param {HTMLElement} el
+ * @param {any} result
+ */
+function applyStyleBinding(el, result) {
+  const prev = boundStyleUndo.get(el);
+  if (prev) prev();
+
+  let undo = () => {};
+  if (typeof result === 'object' && result) {
+    undo = setStylesFromObject(el, result);
+  } else if (result != null && result !== false) {
+    const cache = el.getAttribute('style');
+    el.setAttribute('style', String(result));
+    undo = () => {
+      if (cache == null || cache === '') el.removeAttribute('style');
+      else el.setAttribute('style', cache);
+    };
+  }
+  boundStyleUndo.set(el, undo);
+}
+
 function applyBinding(el, prop, result) {
   if (prop === 'class' || prop === 'className') {
-    if (typeof result === 'object' && result && !Array.isArray(result)) {
-      for (const [cls, on] of Object.entries(result)) {
-        for (const token of String(cls).split(/\s+/).filter(Boolean)) {
-          el.classList.toggle(token, !!on);
-        }
-      }
-      // Prefer classList as source of truth; sync attribute for inspectors/mocks.
-      el.setAttribute('class', el.classList.toString());
-    } else if (Array.isArray(result)) {
-      // merge with non-bound classes is hard; set all
-      const staticCls = el.getAttribute('data-static-class') || '';
-      const merged = [staticCls, ...result.filter(Boolean)]
-        .filter(Boolean)
-        .join(' ');
-      el.setAttribute('class', merged);
-    } else if (result != null && result !== false && result !== '') {
-      const staticCls = el.getAttribute('data-static-class');
-      const merged =
-        staticCls != null
-          ? `${staticCls} ${result}`.trim()
-          : String(result);
-      el.setAttribute('class', merged);
-    } else {
-      // false / null / undefined / '' → drop bound classes; keep static only.
-      // Without this, toggling `cond ? 'on' : ''` left `on` stuck on the element.
-      const staticCls = el.getAttribute('data-static-class') || '';
-      el.setAttribute('class', staticCls);
-    }
+    applyClassBinding(el, result);
   } else if (prop === 'style') {
-    if (typeof result === 'object' && result) {
-      Object.assign(/** @type {HTMLElement} */ (el).style, result);
-    } else if (result != null) {
-      el.setAttribute('style', String(result));
-    }
+    applyStyleBinding(/** @type {HTMLElement} */ (el), result);
   } else if (
     prop === 'disabled' ||
     prop === 'checked' ||
@@ -764,14 +908,35 @@ function processElement(el, parentScope) {
       }
 
       case 'bind': {
-        if (!el.hasAttribute('data-static-class') && el.className) {
-          el.setAttribute('data-static-class', el.getAttribute('class') || '');
-        }
+        // Alpine: :class / :style are additive with undo — never snapshot the
+        // live class list into data-static-class (that froze dynamic tokens
+        // like `collapsed` whenever a sibling :style bind registered later).
         const prop = arg || 'value';
+        if (prop === 'class' || prop === 'className') {
+          // happy-dom quirk: an element parsed with BOTH `class="…"` and
+          // `:class="…"` freezes subsequent class writes (setAttribute /
+          // classList.add only keep the original tokens). Re-creating the
+          // class attribute after removing the directive unsticks it.
+          // Harmless in real browsers.
+          const cur = el.getAttribute('class');
+          el.removeAttribute('class');
+          if (cur != null && cur !== '') el.setAttribute('class', cur);
+        }
         const stop = effect(() => {
           applyBinding(el, prop, evaluate(expression, scope, el));
         });
-        addCleanup(el, stop);
+        addCleanup(el, () => {
+          stop();
+          if (prop === 'class' || prop === 'className') {
+            const u = boundClassUndo.get(el);
+            if (u) u();
+            boundClassUndo.delete(el);
+          } else if (prop === 'style') {
+            const u = boundStyleUndo.get(el);
+            if (u) u();
+            boundStyleUndo.delete(el);
+          }
+        });
         break;
       }
 

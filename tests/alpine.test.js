@@ -96,6 +96,82 @@ describe('x-model / @click / :class', () => {
     expect(el.getAttribute('aria-label')).toBe('off');
   });
 
+  test(':class string toggles tokens without freezing them (Alpine undo)', async () => {
+    // Regression: brain viz sidebar — dynamic "collapsed" must leave when false.
+    const el = mountHtml(`
+      <div x-data="{ collapsed: true }">
+        <div
+          class="panel"
+          id="side"
+          :class="'panel' + (collapsed ? ' collapsed' : '')"
+        ></div>
+        <button type="button" @click="collapsed = !collapsed">t</button>
+      </div>
+    `);
+    await flush();
+    const side = el.querySelector('#side');
+    expect(side.classList.contains('panel')).toBe(true);
+    expect(side.classList.contains('collapsed')).toBe(true);
+    await click(el.querySelector('button'));
+    expect(side.classList.contains('panel')).toBe(true);
+    expect(side.classList.contains('collapsed')).toBe(false);
+    await click(el.querySelector('button'));
+    expect(side.classList.contains('collapsed')).toBe(true);
+  });
+
+  test(':class + :style on same node — style must not freeze class (Alpine)', async () => {
+    // The old m-js path snapshotted className into data-static-class on EVERY
+    // bind, so :style registered after :class had painted "collapsed" and
+    // permanently re-merged it on each update.
+    const el = mountHtml(`
+      <div x-data="{ collapsed: true, w: 200 }">
+        <aside
+          id="side"
+          :class="'panel' + (collapsed ? ' collapsed' : '')"
+          :style="{ width: w + 'px', '--sidebar-w': w + 'px' }"
+        ></aside>
+        <button type="button" class="open" @click="collapsed = false">open</button>
+        <button type="button" class="wide" @click="w = 320">wide</button>
+      </div>
+    `);
+    await flush();
+    const side = /** @type {HTMLElement} */ (el.querySelector('#side'));
+    expect(side.classList.contains('collapsed')).toBe(true);
+    expect(side.style.width).toBe('200px');
+    expect(side.style.getPropertyValue('--sidebar-w')).toBe('200px');
+
+    await click(el.querySelector('.open'));
+    expect(side.classList.contains('collapsed')).toBe(false);
+    expect(side.classList.contains('panel')).toBe(true);
+
+    // Changing style alone must not resurrect collapsed
+    await click(el.querySelector('.wide'));
+    expect(side.style.width).toBe('320px');
+    expect(side.style.getPropertyValue('--sidebar-w')).toBe('320px');
+    expect(side.classList.contains('collapsed')).toBe(false);
+    // Must not accumulate "panel panel panel…" either
+    const panels = side.className.split(/\s+/).filter((t) => t === 'panel');
+    expect(panels.length).toBe(1);
+  });
+
+  test(':class object form adds and removes by boolean', async () => {
+    const el = mountHtml(`
+      <div x-data="{ on: false }">
+        <div id="box" class="base" :class="{ active: on, dim: !on }"></div>
+        <button type="button" @click="on = !on">t</button>
+      </div>
+    `);
+    await flush();
+    const box = el.querySelector('#box');
+    expect(box.classList.contains('base')).toBe(true);
+    expect(box.classList.contains('dim')).toBe(true);
+    expect(box.classList.contains('active')).toBe(false);
+    await click(el.querySelector('button'));
+    expect(box.classList.contains('active')).toBe(true);
+    expect(box.classList.contains('dim')).toBe(false);
+    expect(box.classList.contains('base')).toBe(true);
+  });
+
   test(':disabled boolean binding', async () => {
     const el = mountHtml(`
       <div x-data="{ busy: true }">

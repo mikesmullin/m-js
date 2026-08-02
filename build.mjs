@@ -186,14 +186,17 @@ async function cmdPackage() {
  */
 async function patchDocsTree(docsRoot, version) {
   // app.js
+  const cdnUrl = `${CDN_BASE}/dist/${DIST_FILES.min}`;
   await writeFile(
     join(docsRoot, 'app.js'),
     `/**
  * m.js docs site (orphan \`${DOCS_BRANCH}\` branch)
  * Framework documentation only — UI storybook lives at m-js-components.
- * Runtime is the published CDN bundle under ./dist/.
+ *
+ * Runtime is the cloud-hosted CDN bundle (same URL any site can copy-paste):
+ *   ${cdnUrl}
  */
-import M, { Router } from './dist/${DIST_FILES.min}';
+import M, { Router } from '${cdnUrl}';
 
 window.__M__ = { M, m: M, Router };
 
@@ -485,8 +488,9 @@ async function cmdRelease(args) {
       await cp(DIST, docsDist, { recursive: true });
       await patchDocsTree(work, version);
       const sample = await readFile(join(work, 'app.js'), 'utf8');
-      if (!sample.includes(`./dist/${DIST_FILES.min}`)) {
-        die('dry-run: app.js was not patched to import dist bundle');
+      const expectedCdn = `${CDN_BASE}/dist/${DIST_FILES.min}`;
+      if (!sample.includes(expectedCdn)) {
+        die(`dry-run: app.js was not patched to import CDN URL (${expectedCdn})`);
       }
       log('dry-run docs patch OK');
       log('dry-run complete — dist/ is ready; re-run without --dry-run to publish');

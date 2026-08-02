@@ -280,54 +280,7 @@ export default { boot };
     await writeFile(abs, src, 'utf8');
   }
 
-  // guide: show CDN hello-world using the published min bundle
-  {
-    const guidePath = join(docsRoot, 'pages/guide.js');
-    if (await exists(guidePath)) {
-      let guide = await readFile(guidePath, 'utf8');
-      // Replace the local /src/index.js hello-world block with CDN usage
-      // NOTE: guide.js itself is a JS template string — any nested ` must be \`-escaped.
-      const cdnHello = `        <section class="space-y-3">
-          <h2 class="text-xl font-semibold text-cyan-200">6. Hello world (CDN)</h2>
-          <p class="text-sm text-slate-400">
-            Drop the minified ESM build onto any page — no install required.
-            Served from GitHub Pages at
-            <code class="text-cyan-300">${CDN_BASE}/dist/${DIST_FILES.min}</code>.
-          </p>
-          <pre class="code-block"><code>&lt;!DOCTYPE html&gt;
-&lt;html lang=<span class="str">"en"</span>&gt;
-&lt;head&gt;
-  &lt;meta charset=<span class="str">"UTF-8"</span> /&gt;
-  &lt;title&gt;Hello&lt;/title&gt;
-&lt;/head&gt;
-&lt;body&gt;
-  &lt;div id=<span class="str">"app"</span>&gt;&lt;/div&gt;
-  &lt;script type=<span class="str">"module"</span>&gt;
-    <span class="kw">import</span> M <span class="kw">from</span> <span class="str">'${CDN_BASE}/dist/${DIST_FILES.min}'</span>
-
-    M.mount(<span class="str">'#app'</span>, () =&gt; ({
-      template: \\\`&lt;h1 x-text=<span class="str">"'Hello world'"</span>&gt;&lt;/h1&gt;\\\`,
-    }))
-  &lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre>
-        </section>`;
-
-      if (guide.includes('6. Hello world')) {
-        guide = guide.replace(
-          /<section class="space-y-3">\s*<h2 class="text-xl font-semibold text-cyan-200">6\. Hello world[\s\S]*?<\/section>/,
-          cdnHello,
-        );
-      } else {
-        // insert before the trailing nav buttons if marker missing
-        guide = guide.replace(
-          /<div class="flex gap-3 pt-4">/,
-          `${cdnHello}\n\n        <div class="flex gap-3 pt-4">`,
-        );
-      }
-      await writeFile(guidePath, guide, 'utf8');
-    }
-  }
+  // CDN playground lives on the home page (pages/home.js) — do not re-inject into guide.
 
   // layout version badge
   {

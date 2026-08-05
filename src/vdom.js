@@ -701,11 +701,22 @@ export const patchAttr = (oldVNode, newVNode) => {
       }
       return;
     }
-    v = normalizeAttrValue(k, v);
-    // An unchanged attribute must not be re-written: redrawing with unchanged
-    // state has to be a genuine no-op, not "the same bytes again".
-    if (!isFalsy(oldVNode) && normalizeAttrValue(k, ov) === v) return;
-    newVNode._patchAttr('' !== v, k, v);
+    // Removal is driven by null/undefined/false — NOT by an empty string.
+    // `data-editor`, `hidden`, `disabled` and friends are written valueless
+    // in HTML and parse to "", so conflating the two silently deletes them.
+    const drop = isFalsy(v);
+    const next = drop ? '' : normalizeAttrValue(k, v);
+    if (isFalsy(oldVNode)) {
+      if (drop) return; // nothing to remove from a fresh element
+    } else {
+      // An unchanged attribute must not be re-written: redrawing with
+      // unchanged state has to be a genuine no-op.
+      const hadDrop = isFalsy(ov);
+      if (hadDrop === drop && (drop || normalizeAttrValue(k, ov) === next)) {
+        return;
+      }
+    }
+    newVNode._patchAttr(!drop, k, next);
   };
   for (k in newVNode.attrs) {
     v = newVNode.attrs[k];
@@ -814,3 +825,8 @@ function unbind(vnode, event, fn) {
 //    every attribute on every pass; harmless in isolation, but it means a
 //    redraw with unchanged state still performs DOM work, which is exactly the
 //    property this port exists to provide.
+// 10. An empty string no longer means "remove the attribute". v2 decided
+//    removal with `'' !== v`, but valueless HTML attributes (data-editor,
+//    hidden, disabled, alt="") parse to "" — so every one of them was
+//    silently dropped from the rendered output. Removal is now driven by
+//    null / undefined / false only.

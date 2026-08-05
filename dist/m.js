@@ -1,4 +1,4 @@
-/*! m.js v3.1.0 | MIT | https://mikesmullin.github.io/m-js/ */
+/*! m.js v3.1.1 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -822,20 +822,28 @@ var patchAttr = (oldVNode, newVNode) => {
       return;
     }
     if (isPropertyAttr(newVNode.dom, k)) {
-      const next = v == null || v === false ? "" : v === true ? true : v;
+      const next2 = v == null || v === false ? "" : v === true ? true : v;
       if (k === "checked" || k === "selected" || k === "indeterminate" || k === "muted") {
         const b = !!v && v !== "false";
         if (newVNode.dom[k] !== b)
           newVNode.dom[k] = b;
-      } else if (newVNode.dom[k] !== next) {
-        newVNode.dom[k] = next;
+      } else if (newVNode.dom[k] !== next2) {
+        newVNode.dom[k] = next2;
       }
       return;
     }
-    v = normalizeAttrValue(k, v);
-    if (!isFalsy(oldVNode) && normalizeAttrValue(k, ov) === v)
-      return;
-    newVNode._patchAttr(v !== "", k, v);
+    const drop = isFalsy(v);
+    const next = drop ? "" : normalizeAttrValue(k, v);
+    if (isFalsy(oldVNode)) {
+      if (drop)
+        return;
+    } else {
+      const hadDrop = isFalsy(ov);
+      if (hadDrop === drop && (drop || normalizeAttrValue(k, ov) === next)) {
+        return;
+      }
+    }
+    newVNode._patchAttr(!drop, k, next);
   };
   for (k in newVNode.attrs) {
     v = newVNode.attrs[k];

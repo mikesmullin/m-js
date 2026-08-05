@@ -1,4 +1,4 @@
-/*! m.js v3.0.0 | MIT | https://mikesmullin.github.io/m-js/ */
+/*! m.js v3.1.0 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -294,19 +294,911 @@ function clearStore(name) {
   getHmrBucket()?.delete(name);
 }
 
-// src/m.js
-var VERSION = "3.0.0";
+// src/vdom.js
+var HTML_NS = "http://www.w3.org/1999/xhtml";
+var SVG_NS = "http://www.w3.org/2000/svg";
+var MATHML_NS = "http://www.w3.org/1998/Math/MathML";
+var isFalsy = (v) => v == null || v === false;
 var DEBUG = false;
+function setDebug(on) {
+  DEBUG = !!on;
+}
+var delayedLifecycleEvents = [];
+var prefixIfNotEmpty = (prefix, s) => s.length < 1 ? "" : `${prefix}${s}`;
+var selector = (o, tag, id, classList) => tag + prefixIfNotEmpty("#", id ?? "") + prefixIfNotEmpty(".", classList?.trim().replace(/\s+/g, ".") ?? "");
+var domToString = (e) => `(${e?.constructor?.name ?? typeof e} ${selector(e, e?.nodeName ?? e?.constructor?.name ?? JSON.stringify(e), e?.id, Array.from(e?.classList ?? []).join(" "))})`;
+var insertion = (parent, vnode, dom, nextSibling) => {
+  if (DEBUG) {
+    console.debug(`insert ${vnode.toString()} parent=${domToString(parent)} nextSibling=${domToString(nextSibling)}`, { parent, dom, nextSibling });
+  }
+  parent.insertBefore(dom, nextSibling ?? null);
+};
+
+class FragmentVNode {
+  static _empty(f) {
+    if (f instanceof FragmentVNode)
+      return f;
+    const _this = new FragmentVNode;
+    _this._siblings = {};
+    _this._keys = [];
+    _this._idxByKey = {};
+    return _this;
+  }
+  static _factory(siblings) {
+    const _this = FragmentVNode._empty();
+    if (siblings == null)
+      return _this;
+    const keys = Object.keys(siblings);
+    if (keys.length < 1)
+      return _this;
+    let i = 0;
+    for (const sid of keys) {
+      const vnode = siblings[sid];
+      if (isFalsy(vnode))
+        continue;
+      _this._keys.push(sid);
+      _this._idxByKey[sid] = i;
+      _this._siblings[sid] = { vnode, i };
+      i++;
+    }
+    return _this;
+  }
+  get length() {
+    return this._keys.length;
+  }
+  _is(b) {
+    return b instanceof FragmentVNode;
+  }
+  _create() {
+    this._df = new DocumentFragment;
+  }
+  _update() {
+    this._create();
+  }
+  _insert(parent, old, nextSibling) {}
+  _recurse(parent, old, nextSibling) {
+    updateNodes(parent, old, this, nextSibling);
+  }
+  _delete(parent) {
+    for (const { sibling } of this._reverseWalk()) {
+      sibling.vnode._delete(parent);
+    }
+    this._df = new DocumentFragment;
+    this._siblings = {};
+    this._keys = [];
+    this._idxByKey = {};
+  }
+  static _delete(f, parent) {
+    if (isFalsy(f))
+      return;
+    f._delete(parent);
+  }
+  *_reverseWalk() {
+    for (let i = this._keys.length - 1;i >= 0; i--) {
+      const sid = this._keys[i];
+      const sibling = this._siblings[sid];
+      yield { i, sid, sibling };
+    }
+  }
+  _getNextSibling() {
+    return this._siblings[this._keys[0]]?.vnode._getNextSibling();
+  }
+  toString() {
+    return `(DocumentFragment)`;
+  }
+}
+
+class TextVNode {
+  static _factory(text) {
+    if (typeof text !== "string")
+      return;
+    if (text.length < 1)
+      return;
+    const _this = new TextVNode;
+    _this._text = text || "";
+    return _this;
+  }
+  _is(b) {
+    return b instanceof TextVNode;
+  }
+  _create() {
+    this.dom = document.createTextNode(this._text);
+    if (DEBUG)
+      console.debug(`create ${this.toString()}`, this.dom);
+  }
+  _update(parent, old) {
+    this.dom = old.dom;
+    if (this._text !== old._text) {
+      this.dom.textContent = this._text;
+    }
+  }
+  _insert(parent, old, nextSibling) {
+    insertion(parent, this, this.dom, nextSibling);
+  }
+  _recurse(parent, old, nextSibling) {}
+  _delete(parent) {
+    if (DEBUG)
+      console.debug(`delete ${this.toString()}`, this.dom);
+    parent?.removeChild(this.dom);
+  }
+  _getNextSibling() {
+    return this;
+  }
+  toString() {
+    return `(TextNode ${JSON.stringify(this._text)})`;
+  }
+}
+var attributable = {
+  _teardownForeign() {
+    const list = this._foreign;
+    if (!list)
+      return;
+    for (const { target, event, fn, opts } of list) {
+      target.removeEventListener(event, fn, opts);
+    }
+    this._foreign = null;
+  }
+};
+
+class ElementVNode {
+  static factory(ns, tag, attrs, children) {
+    const _this = new ElementVNode;
+    _this.ns = ns;
+    _this.tag = tag;
+    _this.attrs = attrs ?? {};
+    _this.children = children;
+    return _this;
+  }
+  _is(b) {
+    return b instanceof ElementVNode && this.ns === b.ns && this.tag === b.tag;
+  }
+  _create() {
+    this.dom = document.createElementNS(this.ns, this.tag);
+    patchAttr(null, this);
+    if (this.oncreate)
+      delayedLifecycleEvents.push(() => this.oncreate(this.dom));
+    if (DEBUG)
+      console.debug(`create ${this.toString()}`, this.dom);
+  }
+  _update(parent, old) {
+    this.dom = old.dom;
+    this._foreign = old._foreign;
+    this._cleanup = old._cleanup;
+    this._box = old._box;
+    if (this._box && this.rebind)
+      this.rebind(this._box);
+    patchAttr(old, this);
+  }
+  _insert(parent, old, nextSibling) {
+    insertion(parent, this, this.dom, nextSibling);
+  }
+  _recurse(parent, old) {
+    updateNodes(this.dom, old?.children, this.children, null);
+  }
+  _delete(parent) {
+    FragmentVNode._delete(this.children, this.dom);
+    this._cleanup?.();
+    this._teardownForeign();
+    if (DEBUG)
+      console.debug(`delete ${this.toString()}`, this.dom);
+    parent?.removeChild(this.dom);
+  }
+  _patchAttr(add, k, v) {
+    const ns = NS_BY_PREFIX[k.split(":")[0]];
+    if (add) {
+      if (ns)
+        this.dom.setAttributeNS(ns, k, v);
+      else
+        this.dom.setAttribute(k, v);
+    } else if (ns) {
+      this.dom.removeAttributeNS(ns, k.split(":")[1]);
+    } else {
+      this.dom.removeAttribute(k);
+    }
+  }
+  _getNextSibling() {
+    return this;
+  }
+  toString() {
+    return `(Element ns=${this.ns} ${selector(this.dom, this.dom?.nodeName, this.dom?.id, this.dom?.classList?.toString())})`;
+  }
+}
+Object.assign(ElementVNode.prototype, attributable);
+var NS_BY_PREFIX = {
+  xlink: "http://www.w3.org/1999/xlink",
+  xml: "http://www.w3.org/XML/1998/namespace"
+};
+
+class HTMLElementVNode {
+  static factory(tag, attrs, children) {
+    const _this = new HTMLElementVNode;
+    _this.tag = tag;
+    _this.attrs = attrs ?? {};
+    _this.children = children;
+    return _this;
+  }
+  _is(b) {
+    return b instanceof HTMLElementVNode && this.tag === b.tag;
+  }
+  _create() {
+    this.dom = document.createElement(this.tag);
+    patchAttr(null, this);
+    if (this.oncreate)
+      delayedLifecycleEvents.push(() => this.oncreate(this.dom));
+    if (DEBUG)
+      console.debug(`create ${this.toString()}`, this.dom);
+  }
+  _update(parent, old) {
+    this.dom = old.dom;
+    this._foreign = old._foreign;
+    this._cleanup = old._cleanup;
+    this._box = old._box;
+    if (this._box && this.rebind)
+      this.rebind(this._box);
+    patchAttr(old, this);
+  }
+  _insert(parent, old, nextSibling) {
+    insertion(parent, this, this.dom, nextSibling);
+  }
+  _recurse(parent, old) {
+    updateNodes(this.dom, old?.children, this.children, null);
+  }
+  _delete(parent) {
+    FragmentVNode._delete(this.children, this.dom);
+    this._cleanup?.();
+    this._teardownForeign();
+    if (DEBUG)
+      console.debug(`delete ${this.toString()}`, this.dom);
+    parent?.removeChild(this.dom);
+  }
+  _patchAttr(add, k, v) {
+    if (add)
+      this.dom.setAttribute(k, v);
+    else
+      this.dom.removeAttribute(k);
+  }
+  _getNextSibling() {
+    return this;
+  }
+  toString() {
+    return `(HTMLElement ${selector(this.dom, this.dom?.nodeName, this.dom?.id, this.dom?.classList?.toString())})`;
+  }
+}
+Object.assign(HTMLElementVNode.prototype, attributable);
+
+class RawHTMLVNode {
+  static factory(tag, attrs, html) {
+    const _this = new RawHTMLVNode;
+    _this.tag = tag;
+    _this.attrs = attrs ?? {};
+    _this.html = html ?? "";
+    return _this;
+  }
+  _is(b) {
+    return b instanceof RawHTMLVNode && this.tag === b.tag;
+  }
+  _create() {
+    this.dom = document.createElement(this.tag);
+    patchAttr(null, this);
+    this.dom.innerHTML = this.html;
+    if (this.oncreate)
+      delayedLifecycleEvents.push(() => this.oncreate(this.dom));
+  }
+  _update(parent, old) {
+    this.dom = old.dom;
+    this._foreign = old._foreign;
+    this._cleanup = old._cleanup;
+    this._box = old._box;
+    if (this._box && this.rebind)
+      this.rebind(this._box);
+    patchAttr(old, this);
+    if (this.html !== old.html)
+      this.dom.innerHTML = this.html;
+  }
+  _insert(parent, old, nextSibling) {
+    insertion(parent, this, this.dom, nextSibling);
+  }
+  _recurse() {}
+  _delete(parent) {
+    this._cleanup?.();
+    this._teardownForeign();
+    parent?.removeChild(this.dom);
+  }
+  _patchAttr(add, k, v) {
+    if (add)
+      this.dom.setAttribute(k, v);
+    else
+      this.dom.removeAttribute(k);
+  }
+  _getNextSibling() {
+    return this;
+  }
+  toString() {
+    return `(RawHTML ${this.tag})`;
+  }
+}
+Object.assign(RawHTMLVNode.prototype, attributable);
+
+class Component {
+  oninit() {}
+  onbeforeupdate() {}
+  view() {}
+  oncreate() {}
+  onupdate() {}
+  onbeforeremove() {}
+  onremove() {}
+}
+
+class ComponentVNode {
+  static _factory(cls, attrs, children) {
+    if (!("view" in (cls?.prototype ?? {}))) {
+      throw Error(`component() param cls: expected Component class, ` + `got ${typeof cls} ${JSON.stringify(cls?.constructor?.name)}`);
+    }
+    const _this = new ComponentVNode;
+    _this.tag = cls?.name;
+    _this.cls = cls;
+    _this.instance = null;
+    _this.attrs = attrs ?? {};
+    _this._children = FragmentVNode._empty(children);
+    return _this;
+  }
+  _is(b) {
+    return b instanceof ComponentVNode && this.cls === b.cls;
+  }
+  _create() {
+    if (DEBUG)
+      console.debug(`create ${this.toString()}`, this);
+    const inst = this.instance = new this.cls;
+    inst.tag = this.cls?.name;
+    inst.state = {};
+    inst.attrs = this.attrs ?? {};
+    inst.children = FragmentVNode._empty(this._children);
+    inst.oninit();
+    const children = this._vnode = autoDetect([inst.view()]);
+    if (!isFalsy(children))
+      children._create();
+    delayedLifecycleEvents.push(() => inst.oncreate());
+  }
+  _update(parent, old) {
+    const inst = this.instance = old.instance;
+    this._vnode = old._vnode;
+    if (inst == null)
+      return;
+    inst.attrs = this.attrs ?? {};
+    inst.children = FragmentVNode._empty(this._children);
+    const outcome = inst.onbeforeupdate();
+    if (outcome === false)
+      return;
+    const children = this._vnode = autoDetect([inst.view()]);
+    if (!isFalsy(children))
+      children._update();
+    delayedLifecycleEvents.push(() => inst.onupdate());
+  }
+  _insert(parent, old, nextSibling) {}
+  _recurse(parent, old, nextSibling) {
+    updateNodes(parent, old?._vnode, this._vnode, nextSibling);
+  }
+  _delete(parent) {
+    const inst = this.instance;
+    if (inst == null)
+      return;
+    inst.onbeforeremove();
+    FragmentVNode._delete(this._vnode, parent);
+    if (DEBUG)
+      console.debug(`delete ${this.toString()}`, this);
+    inst.onremove();
+  }
+  _getNextSibling() {
+    if (isFalsy(this._vnode))
+      return;
+    return this._vnode._getNextSibling();
+  }
+  toString() {
+    const e = this.instance ?? this;
+    return `(Component ${selector(e, e.tag, this.attrs?.id, this.attrs?.class)})`;
+  }
+}
+function volatile(siblings) {
+  return FragmentVNode._factory(siblings);
+}
+function fixed(...children) {
+  const siblings = {};
+  for (let i = 0, len = children.length;i < len; i++) {
+    siblings[`_${i}`] = children[i];
+  }
+  return FragmentVNode._factory(siblings);
+}
+var autoDetect = (children) => children.length === 0 ? null : children.length === 1 && children[0] instanceof FragmentVNode ? children[0] : fixed(...children);
+var updateNodes = (parent, oldFragment, newFragment, nextSibling) => {
+  if (parent == null)
+    return;
+  const move = [];
+  if (!isFalsy(newFragment)) {
+    for (const { sid } of newFragment._reverseWalk()) {
+      const newSibling = newFragment._siblings[sid];
+      const oldSibling = isFalsy(oldFragment) ? null : oldFragment._siblings[sid];
+      if (oldSibling == null) {
+        if (!("_create" in newSibling.vnode)) {
+          console.error("invalid vnode", newSibling.vnode);
+        }
+        newSibling.vnode?._create(parent);
+      } else if (newSibling.vnode._is(oldSibling.vnode)) {
+        if (!isFalsy(oldFragment)) {
+          move[oldFragment._idxByKey[sid]] = newFragment._idxByKey[sid];
+        }
+        newSibling.vnode._update(parent, oldSibling.vnode);
+      } else {
+        oldSibling.vnode?._delete(parent);
+        newSibling.vnode?._create(parent);
+      }
+    }
+  }
+  if (!isFalsy(oldFragment)) {
+    for (const { sid } of oldFragment._reverseWalk()) {
+      const oldSibling = oldFragment._siblings[sid];
+      if (isFalsy(newFragment) || newFragment._idxByKey[sid] == null) {
+        oldSibling.vnode?._delete(parent);
+      }
+    }
+  }
+  if (!isFalsy(newFragment)) {
+    const skip = longestIncreasingSubsequence(move);
+    let lastDom = nextSibling;
+    for (const { i, sid, sibling } of newFragment._reverseWalk()) {
+      const oldSibling = isFalsy(oldFragment) ? null : oldFragment._siblings[sid];
+      const newVNode = sibling.vnode;
+      const oldVNode = oldSibling?.vnode;
+      const next = lastDom;
+      if (skip.has(i) && oldSibling != null) {
+        newVNode._recurse(parent, oldVNode, next);
+      } else {
+        newVNode._insert(parent, oldVNode, next);
+        newVNode._recurse(parent, oldVNode, next);
+      }
+      const v = newVNode._getNextSibling();
+      lastDom = v?.dom ?? lastDom;
+    }
+  }
+};
+var longestIncreasingSubsequence = (a) => {
+  const dp = [];
+  let deepest = null;
+  let start = 0;
+  let end = 0;
+  let mid = 0;
+  for (let i = 0, l = a.length;i < l; i++) {
+    if (a[i] == null || Number.isNaN(a[i]))
+      continue;
+    if (deepest == null || (deepest.target ?? 0) < (a[i] ?? 0)) {
+      deepest = { target: a[i], idx: i, leaf: dp[dp.length - 1] };
+      dp.push(deepest);
+      continue;
+    }
+    start = 0;
+    end = dp.length - 1;
+    while (start < end) {
+      mid = (start >>> 1) + (end >>> 1) + (start & end & 1);
+      if ((dp[mid].target ?? 0) < (a[i] ?? 0))
+        start = mid + 1;
+      else
+        end = mid;
+    }
+    dp[start] = { target: a[i], idx: i, leaf: dp[start - 1] };
+    if (start === dp.length - 1)
+      deepest = dp[start];
+  }
+  let c = deepest;
+  const results = new Set;
+  while (c != null) {
+    results.add(a[c.idx]);
+    c = c.leaf;
+  }
+  return results;
+};
+var PROPERTY_ATTRS = new Set([
+  "value",
+  "checked",
+  "selected",
+  "indeterminate",
+  "muted",
+  "volume"
+]);
+var isPropertyAttr = (dom, k) => PROPERTY_ATTRS.has(k) && (k !== "value" || dom.tagName === "INPUT" || dom.tagName === "TEXTAREA" || dom.tagName === "SELECT" || dom.tagName === "OPTION" || dom.tagName === "PROGRESS");
+function normalizeAttrValue(k, v) {
+  const type = typeof v;
+  if (type === "number" || type === "boolean")
+    v = String(v);
+  else if (type !== "string")
+    v = "";
+  if (k === "class")
+    v = String(v).trim();
+  return v;
+}
+var patchAttr = (oldVNode, newVNode) => {
+  let k, v, ov;
+  const apply = () => {
+    if (k[0] === "o" && k[1] === "n") {
+      applyListener(oldVNode, newVNode, k, v, ov);
+      return;
+    }
+    if (isPropertyAttr(newVNode.dom, k)) {
+      const next = v == null || v === false ? "" : v === true ? true : v;
+      if (k === "checked" || k === "selected" || k === "indeterminate" || k === "muted") {
+        const b = !!v && v !== "false";
+        if (newVNode.dom[k] !== b)
+          newVNode.dom[k] = b;
+      } else if (newVNode.dom[k] !== next) {
+        newVNode.dom[k] = next;
+      }
+      return;
+    }
+    v = normalizeAttrValue(k, v);
+    if (!isFalsy(oldVNode) && normalizeAttrValue(k, ov) === v)
+      return;
+    newVNode._patchAttr(v !== "", k, v);
+  };
+  for (k in newVNode.attrs) {
+    v = newVNode.attrs[k];
+    ov = oldVNode?.attrs?.[k];
+    apply();
+  }
+  if (isFalsy(oldVNode))
+    return;
+  for (k in oldVNode.attrs) {
+    if (!(k in newVNode.attrs)) {
+      v = null;
+      ov = oldVNode.attrs[k];
+      apply();
+    }
+  }
+};
+function applyListener(oldVNode, newVNode, k, v, ov) {
+  const event = k.substr(2).split("|")[0];
+  if (v == null) {
+    if (typeof ov === "function")
+      unbind(newVNode, event, ov);
+    return;
+  }
+  if (ov == null) {
+    if (typeof v === "function")
+      bind(newVNode, event, v);
+    return;
+  }
+  if (typeof ov === "function" && typeof v === "function") {
+    if (String(ov) !== String(v) || ov.target !== v.target) {
+      unbind(newVNode, event, ov);
+      bind(newVNode, event, v);
+    } else {
+      if (v.rebind)
+        v.rebind(ov);
+    }
+  }
+}
+function targetFor(vnode, fn) {
+  if (fn.target === "window")
+    return typeof window !== "undefined" ? window : null;
+  if (fn.target === "document")
+    return typeof document !== "undefined" ? document : null;
+  return vnode.dom;
+}
+function bind(vnode, event, fn) {
+  const target = targetFor(vnode, fn);
+  if (!target)
+    return;
+  fn.host = vnode.dom;
+  const opts = fn.opts;
+  target.addEventListener(event, fn, opts);
+  if (fn.target) {
+    (vnode._foreign ??= []).push({ target, event, fn, opts });
+  }
+}
+function unbind(vnode, event, fn) {
+  const target = targetFor(vnode, fn);
+  if (!target)
+    return;
+  target.removeEventListener(event, fn, fn.opts);
+  if (vnode._foreign) {
+    vnode._foreign = vnode._foreign.filter((r) => r.fn !== fn);
+  }
+}
+
+// src/parse.js
+var DIR_ORDER = [
+  "ignore",
+  "ref",
+  "data",
+  "init",
+  "for",
+  "if",
+  "model",
+  "bind",
+  "text",
+  "html",
+  "show",
+  "transition",
+  "on",
+  "effect",
+  "cloak",
+  "mount"
+];
+function isDir(name) {
+  return name.startsWith("x-") || name.startsWith("m-") || name.startsWith("@") || name.startsWith(":") && name.length > 1 && !name.startsWith("::");
+}
+function parseDirective(attrName) {
+  let name = attrName;
+  if (name.startsWith("@")) {
+    const [, target, event] = name.match(/^@([^.]+)\.(.+)$/) || [];
+    if ((target === "window" || target === "document") && event) {
+      const [eventName, ...modifiers] = event.split(".");
+      return {
+        type: "on",
+        arg: eventName,
+        modifiers: [target, ...modifiers],
+        raw: attrName
+      };
+    }
+    return {
+      type: "on",
+      arg: name.slice(1).split(".")[0],
+      modifiers: name.slice(1).split(".").slice(1),
+      raw: attrName
+    };
+  }
+  if (name.startsWith(":") && !name.startsWith("::")) {
+    return {
+      type: "bind",
+      arg: name.slice(1).split(".")[0],
+      modifiers: name.slice(1).split(".").slice(1),
+      raw: attrName
+    };
+  }
+  if (name.startsWith("x-") || name.startsWith("m-"))
+    name = name.slice(2);
+  const [head, ...rest] = name.split(":");
+  const type = head.split(".")[0];
+  const typeMods = head.split(".").slice(1);
+  const argPart = rest.join(":");
+  const arg = argPart ? argPart.split(".")[0] : null;
+  const argMods = argPart ? argPart.split(".").slice(1) : [];
+  return { type, arg, modifiers: [...typeMods, ...argMods], raw: attrName };
+}
+function dirPriority(type) {
+  const i = DIR_ORDER.indexOf(type);
+  return i === -1 ? 100 : i;
+}
+var INLINE = new Set([
+  "A",
+  "ABBR",
+  "B",
+  "BDI",
+  "BDO",
+  "BR",
+  "BUTTON",
+  "CITE",
+  "CODE",
+  "DATA",
+  "DEL",
+  "DFN",
+  "EM",
+  "I",
+  "IMG",
+  "INPUT",
+  "INS",
+  "KBD",
+  "LABEL",
+  "MARK",
+  "Q",
+  "RUBY",
+  "S",
+  "SAMP",
+  "SELECT",
+  "SMALL",
+  "SPAN",
+  "STRONG",
+  "SUB",
+  "SUP",
+  "TEXTAREA",
+  "TIME",
+  "U",
+  "VAR",
+  "WBR"
+]);
+var PRESERVE_WS = new Set(["PRE", "TEXTAREA"]);
+var isWhitespaceOnly = (s) => !/[^\t\n\f\r ]/.test(s);
+var NS_BY_TAG = { svg: SVG_NS, math: MATHML_NS };
+var cache = new Map;
+function parseTemplate(html) {
+  const key = html ?? "";
+  let ast = cache.get(key);
+  if (ast)
+    return ast;
+  ast = parseFragment(key);
+  cache.set(key, ast);
+  return ast;
+}
+function parseFragment(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html ?? "";
+  return walkChildren(tpl.content, HTML_NS, false);
+}
+function parseElement(el) {
+  return walkNode(el, el.namespaceURI || HTML_NS, false);
+}
+function childNodesOf(node) {
+  if (node.tagName === "TEMPLATE" && node.content)
+    return node.content.childNodes;
+  return node.childNodes;
+}
+function walkChildren(parent, ns, preserveWs) {
+  const out = [];
+  const nodes = [...childNodesOf(parent)];
+  for (let i = 0;i < nodes.length; i++) {
+    const node = nodes[i];
+    if (node.nodeType === 3) {
+      const text = node.data;
+      if (preserveWs) {
+        out.push({ kind: "text", text });
+        continue;
+      }
+      if (isWhitespaceOnly(text)) {
+        const prev = nodes[i - 1];
+        const next = nodes[i + 1];
+        const between = prev?.nodeType === 1 && next?.nodeType === 1 && INLINE.has(prev.tagName) && INLINE.has(next.tagName);
+        if (between)
+          out.push({ kind: "text", text: " " });
+        continue;
+      }
+      out.push({ kind: "text", text });
+      continue;
+    }
+    if (node.nodeType !== 1)
+      continue;
+    const child = walkNode(node, ns, preserveWs);
+    if (child)
+      out.push(child);
+  }
+  return out;
+}
+function walkNode(el, parentNs, parentPreserveWs) {
+  const tagName = el.tagName;
+  if (tagName === "SCRIPT")
+    return null;
+  const lower = tagName.toLowerCase();
+  const ns = el.namespaceURI || NS_BY_TAG[lower] || parentNs;
+  const attrs = {};
+  const dirs = [];
+  for (const attr of [...el.attributes]) {
+    if (isDir(attr.name)) {
+      dirs.push({ ...parseDirective(attr.name), expression: attr.value });
+    } else {
+      attrs[attr.name] = attr.value;
+    }
+  }
+  dirs.sort((a, b) => dirPriority(a.type) - dirPriority(b.type));
+  const node = {
+    kind: "el",
+    ns,
+    tag: lower,
+    isTemplate: tagName === "TEMPLATE",
+    attrs,
+    dirs,
+    children: []
+  };
+  for (const d of dirs) {
+    switch (d.type) {
+      case "ignore":
+        node.ignore = true;
+        break;
+      case "ref":
+        node.ref = d.expression;
+        break;
+      case "data":
+        node.data = d;
+        break;
+      case "init":
+        node.init = d;
+        break;
+      case "for":
+        node.for = parseForExpression(d.expression);
+        break;
+      case "if":
+        node.if = d;
+        break;
+      case "text":
+        node.text = d;
+        break;
+      case "html":
+        node.html = d;
+        break;
+      case "show":
+        node.show = d;
+        break;
+      case "transition":
+        node.transition = d;
+        break;
+      case "model":
+        node.model = d;
+        break;
+      case "mount":
+        node.mount = d;
+        break;
+      case "cloak":
+        node.cloak = true;
+        break;
+      case "effect":
+        (node.effects ??= []).push(d);
+        break;
+      case "on":
+        (node.on ??= []).push(d);
+        break;
+      case "bind":
+        if (d.arg === "key")
+          node.key = d;
+        else
+          (node.binds ??= []).push(d);
+        break;
+    }
+  }
+  if (node.ignore) {
+    node.raw = el.innerHTML;
+    return node;
+  }
+  const preserveWs = parentPreserveWs || PRESERVE_WS.has(tagName);
+  node.children = walkChildren(el, ns, preserveWs);
+  return node;
+}
+function parseForExpression(expression) {
+  const match = String(expression).match(/^\s*\(?\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*))?\s*\)?\s+(?:in|of)\s+(.+)$/);
+  if (!match) {
+    console.warn("[m] bad x-for", expression);
+    return null;
+  }
+  const [, item, index, list] = match;
+  return { item, index, list, raw: expression };
+}
+
+// src/reactive.js
 var REACTIVE = Symbol("m.reactive");
 var RAW = Symbol("m.raw");
+var ITERATE_KEY = Symbol("m.iterate");
 var proxyMap = new WeakMap;
 var boundMethodCache = new WeakMap;
 var activeEffect = null;
 var deps = new WeakMap;
+var queued = new Set;
+var pending = false;
+var runsThisFlush = 0;
+var MAX_EFFECT_RUNS_PER_FLUSH = 1e4;
+var invalidationListeners = new Set;
+function onInvalidate(fn) {
+  invalidationListeners.add(fn);
+  return () => invalidationListeners.delete(fn);
+}
+var flushCount = 0;
+var effectCount = 0;
+var redrawCount = 0;
+function bumpRedrawCount() {
+  redrawCount++;
+  flushCount++;
+}
+function scheduleFrame(cb) {
+  const raf = typeof requestAnimationFrame === "function" && requestAnimationFrame || typeof globalThis !== "undefined" && typeof globalThis.requestAnimationFrame === "function" && globalThis.requestAnimationFrame || null;
+  if (raf)
+    return raf.call(globalThis, cb);
+  return queueMicrotask(cb);
+}
+function takePerfStats() {
+  const s = { flushes: flushCount, effects: effectCount, redraws: redrawCount };
+  flushCount = 0;
+  effectCount = 0;
+  redrawCount = 0;
+  return s;
+}
+function takeDrawCalls() {
+  return takePerfStats().flushes;
+}
 function track(target, key) {
   if (!activeEffect)
-    return;
-  if (key === REACTIVE || key === RAW)
     return;
   let byKey = deps.get(target);
   if (!byKey) {
@@ -322,6 +1214,8 @@ function track(target, key) {
   activeEffect._deps?.add(set);
 }
 function trigger(target, key) {
+  for (const fn of invalidationListeners)
+    fn();
   const byKey = deps.get(target);
   if (!byKey)
     return;
@@ -331,40 +1225,13 @@ function trigger(target, key) {
     for (const e of exact)
       effects.add(e);
   if (key === "length") {
-    const iter = byKey.get(Symbol.iterator);
+    const iter = byKey.get(ITERATE_KEY);
     if (iter)
       for (const e of iter)
         effects.add(e);
   }
   for (const e of effects)
     scheduleEffect(e);
-}
-var queued = new Set;
-var pending = false;
-var MAX_EFFECT_RUNS_PER_FLUSH = 1000;
-var runsThisFlush = 0;
-var flushCount = 0;
-var effectCount = 0;
-var redrawCount = 0;
-function scheduleFrame(cb) {
-  const raf = typeof requestAnimationFrame === "function" && requestAnimationFrame || typeof globalThis !== "undefined" && typeof globalThis.requestAnimationFrame === "function" && globalThis.requestAnimationFrame || null;
-  if (raf)
-    return raf.call(globalThis, cb);
-  return queueMicrotask(cb);
-}
-function takePerfStats() {
-  const s = {
-    flushes: flushCount,
-    effects: effectCount,
-    redraws: redrawCount
-  };
-  flushCount = 0;
-  effectCount = 0;
-  redrawCount = 0;
-  return s;
-}
-function takeDrawCalls() {
-  return takePerfStats().flushes;
 }
 function scheduleEffect(e) {
   queued.add(e);
@@ -454,21 +1321,22 @@ function reactive(target) {
       track(obj, key);
       const val = Reflect.get(obj, key, receiver);
       if (typeof val === "function" && Object.prototype.hasOwnProperty.call(obj, key)) {
-        let cache = boundMethodCache.get(obj);
-        if (!cache) {
-          cache = new Map;
-          boundMethodCache.set(obj, cache);
+        let cache2 = boundMethodCache.get(obj);
+        if (!cache2) {
+          cache2 = new Map;
+          boundMethodCache.set(obj, cache2);
         }
-        if (!cache.has(key))
-          cache.set(key, val.bind(proxy));
-        return cache.get(key);
+        if (!cache2.has(key))
+          cache2.set(key, val.bind(proxy));
+        return cache2.get(key);
       }
       if (canReactive(val))
         return reactive(val);
       return val;
     },
-    set(obj, key, value, receiver) {
+    set(obj, key, value) {
       const prev = obj[key];
+      const had = Object.prototype.hasOwnProperty.call(obj, key);
       const prevLen = Array.isArray(obj) ? obj.length : null;
       const next = canReactive(value) && !value[REACTIVE] ? reactive(value) : value;
       const rawNext = next && typeof next === "object" && next[RAW] ? next[RAW] : next;
@@ -478,6 +1346,8 @@ function reactive(target) {
       }
       if (!Object.is(prev, rawNext))
         trigger(obj, key);
+      if (!had && !Array.isArray(obj))
+        trigger(obj, ITERATE_KEY);
       if (Array.isArray(obj) && prevLen !== null && obj.length !== prevLen) {
         trigger(obj, "length");
       }
@@ -486,45 +1356,19 @@ function reactive(target) {
     deleteProperty(obj, key) {
       const had = Object.prototype.hasOwnProperty.call(obj, key);
       const ok = Reflect.deleteProperty(obj, key);
-      if (had)
+      if (had) {
         trigger(obj, key);
+        trigger(obj, ITERATE_KEY);
+      }
       return ok;
+    },
+    ownKeys(obj) {
+      track(obj, Array.isArray(obj) ? "length" : ITERATE_KEY);
+      return Reflect.ownKeys(obj);
     }
   });
   proxyMap.set(target, proxy);
   return proxy;
-}
-function longestIncreasingSubsequence(a) {
-  const dp = [];
-  let deepest = null;
-  for (let i = 0, l = a.length;i < l; i++) {
-    if (a[i] == null || Number.isNaN(a[i]))
-      continue;
-    if (deepest == null || (deepest.target ?? 0) < (a[i] ?? 0)) {
-      deepest = { target: a[i], idx: i, leaf: dp[dp.length - 1] };
-      dp.push(deepest);
-      continue;
-    }
-    let start = 0;
-    let end = dp.length - 1;
-    while (start < end) {
-      const mid = (start >>> 1) + (end >>> 1) + (start & end & 1);
-      if ((dp[mid].target ?? 0) < (a[i] ?? 0))
-        start = mid + 1;
-      else
-        end = mid;
-    }
-    dp[start] = { target: a[i], idx: i, leaf: dp[start - 1] };
-    if (start === dp.length - 1)
-      deepest = dp[start];
-  }
-  const results = new Set;
-  let c = deepest;
-  while (c != null) {
-    results.add(a[c.idx]);
-    c = c.leaf;
-  }
-  return results;
 }
 function effect(fn) {
   const depSets = new Set;
@@ -552,6 +1396,26 @@ function effect(fn) {
     depSets.clear();
   };
 }
+function findReactiveRoot(scope) {
+  let cur = scope;
+  let best = null;
+  const seen = new Set;
+  while (cur && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur[REACTIVE]) {
+      best = cur;
+    } else {
+      const proxied = proxyMap.get(cur);
+      if (proxied)
+        best = proxied;
+    }
+    const raw = cur[RAW] || cur;
+    cur = Object.getPrototypeOf(raw);
+  }
+  return best || scope;
+}
+
+// src/scope.js
 var dataRegistry = new Map;
 var STORE_HMR = "__M_ALPINE_STORES__";
 var localStoreBucket = new Map;
@@ -572,24 +1436,39 @@ function getStoresRoot() {
   }
   return storesRoot;
 }
-function buildMagics(el, data) {
-  const magics = {
+var exprCache = new Map;
+var actionCache = new Map;
+function compile(cache2, expr, body) {
+  let fn = cache2.get(expr);
+  if (fn !== undefined)
+    return fn;
+  try {
+    fn = new Function("$scope", "$magics", body);
+  } catch (_) {
+    fn = null;
+  }
+  cache2.set(expr, fn);
+  return fn;
+}
+function buildMagics(scope, ctx = {}) {
+  return {
     get $el() {
-      return el;
+      return ctx.getEl?.() ?? null;
     },
     get $refs() {
-      return collectRefs(closestRoot(el) || el);
+      return ctx.refs ?? {};
     },
     get $store() {
       return getStoresRoot();
     },
     $dispatch(name, detail) {
-      el.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
+      const el = ctx.getEl?.();
+      el?.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
     },
     $watch(property, callback) {
-      let prev = evaluate(property, data, el);
+      let prev = evaluate(property, scope, ctx);
       return effect(() => {
-        const next = evaluate(property, data, el);
+        const next = evaluate(property, scope, ctx);
         if (!Object.is(prev, next)) {
           const old = prev;
           prev = next;
@@ -606,551 +1485,47 @@ function buildMagics(el, data) {
       });
     }
   };
-  return magics;
 }
-function collectRefs(root) {
-  const refs = {};
-  walk(root, (el) => {
-    const name = el.getAttribute?.("x-ref") || el.getAttribute?.("m-ref");
-    if (name)
-      refs[name] = el;
-  });
-  return refs;
+var DEBUG2 = false;
+function setDebug2(on) {
+  DEBUG2 = !!on;
 }
-function evaluate(expr, scope, el, $event) {
+function evaluate(expr, scope, ctx, $event) {
   if (expr == null || expr === "")
     return;
+  const fn = compile(exprCache, expr, `with ($magics) { with ($scope) { return (${expr}); } }`);
+  if (!fn)
+    return;
   try {
-    const magics = el ? buildMagics(el, scope) : {};
+    const magics = buildMagics(scope, ctx);
     if ($event !== undefined)
       magics.$event = $event;
-    const fn = new Function("$scope", "$magics", `with ($magics) { with ($scope) { return (${expr}); } }`);
     return fn(scope ?? {}, magics);
   } catch (err) {
-    if (DEBUG)
+    if (DEBUG2)
       console.warn("[m] eval:", expr, err);
     return;
   }
 }
-function evaluateAction(expr, scope, el, $event) {
+function evaluateAction(expr, scope, ctx, $event) {
   if (!expr)
     return;
+  const fn = compile(actionCache, expr, `with ($magics) { with ($scope) { ${expr} } }`);
+  if (!fn)
+    return evaluate(expr, scope, ctx, $event);
   try {
-    const magics = el ? buildMagics(el, scope) : {};
+    const magics = buildMagics(scope, ctx);
     if ($event !== undefined)
       magics.$event = $event;
-    const fn = new Function("$scope", "$magics", `with ($magics) { with ($scope) { ${expr} } }`);
-    fn(scope ?? {}, magics);
+    return fn(scope ?? {}, magics);
   } catch (err) {
-    try {
-      evaluate(expr, scope, el, $event);
-    } catch (err2) {
-      if (DEBUG)
-        console.warn("[m] action:", expr, err2);
-    }
-  }
-}
-function walk(el, cb) {
-  if (el.nodeType !== 1)
-    return;
-  const skip = cb(el);
-  if (skip === false)
-    return;
-  for (const child of [...el.children])
-    walk(child, cb);
-}
-var elementData = new WeakMap;
-var elementCleanups = new WeakMap;
-function addCleanup(el, fn) {
-  let list = elementCleanups.get(el);
-  if (!list) {
-    list = [];
-    elementCleanups.set(el, list);
-  }
-  list.push(fn);
-}
-function cleanupEl(el) {
-  walk(el, (node) => {
-    const list = elementCleanups.get(node);
-    if (list) {
-      for (const fn of list) {
-        try {
-          fn();
-        } catch (_) {}
-      }
-      elementCleanups.delete(node);
-    }
-    elementData.delete(node);
-  });
-}
-function closestData(el) {
-  let cur = el;
-  while (cur) {
-    if (elementData.has(cur))
-      return elementData.get(cur);
-    cur = cur.parentElement;
-  }
-  return null;
-}
-function closestRoot(el) {
-  let cur = el;
-  let root = el;
-  while (cur) {
-    if (elementData.has(cur))
-      root = cur;
-    if (cur.hasAttribute?.("x-data") || cur.hasAttribute?.("m-data"))
-      root = cur;
-    cur = cur.parentElement;
-  }
-  return root;
-}
-var DIR_ORDER = [
-  "ignore",
-  "ref",
-  "data",
-  "init",
-  "for",
-  "if",
-  "model",
-  "bind",
-  "text",
-  "html",
-  "show",
-  "transition",
-  "on",
-  "effect",
-  "cloak"
-];
-function isDir(name) {
-  return name.startsWith("x-") || name.startsWith("m-") || name.startsWith("@") || name.startsWith(":") && name.length > 1;
-}
-function parseDirective(attrName) {
-  let name = attrName;
-  if (name.startsWith("@")) {
-    return {
-      type: "on",
-      arg: name.slice(1).split(".")[0],
-      modifiers: name.slice(1).split(".").slice(1),
-      raw: attrName
-    };
-  }
-  if (name.startsWith(":") && !name.startsWith("::")) {
-    return {
-      type: "bind",
-      arg: name.slice(1).split(".")[0],
-      modifiers: name.slice(1).split(".").slice(1),
-      raw: attrName
-    };
-  }
-  if (name.startsWith("x-") || name.startsWith("m-"))
-    name = name.slice(2);
-  const [head, ...rest] = name.split(":");
-  const type = head.split(".")[0];
-  const typeMods = head.split(".").slice(1);
-  const argPart = rest.join(":");
-  const arg = argPart ? argPart.split(".")[0] : null;
-  const argMods = argPart ? argPart.split(".").slice(1) : [];
-  return {
-    type,
-    arg,
-    modifiers: [...typeMods, ...argMods],
-    raw: attrName
-  };
-}
-function dirPriority(type) {
-  const i = DIR_ORDER.indexOf(type);
-  return i === -1 ? 100 : i;
-}
-var boundClassUndo = new WeakMap;
-var boundStyleUndo = new WeakMap;
-function splitClassTokens(s) {
-  return String(s || "").split(/\s+/).filter(Boolean);
-}
-function setClassesFromString(el, classString) {
-  if (classString === true)
-    classString = "";
-  const want = splitClassTokens(classString || "");
-  const beforeTokens = splitClassTokens(el.getAttribute("class") || el.className || "");
-  const beforeSet = new Set(beforeTokens);
-  const toAdd = want.filter((t) => !beforeSet.has(t));
-  if (toAdd.length) {
-    const next = [...beforeTokens, ...toAdd].join(" ");
-    el.setAttribute("class", next);
-    if (globalThis.__m_debug_class) {
-      console.log("[setClassesFromString]", {
-        classString,
-        beforeTokens,
-        toAdd,
-        next,
-        afterAttr: el.getAttribute("class"),
-        afterClassName: el.className
-      });
-    }
-  }
-  return () => {
-    if (!toAdd.length)
-      return;
-    const drop = new Set(toAdd);
-    const cur = splitClassTokens(el.getAttribute("class") || el.className || "");
-    el.setAttribute("class", cur.filter((t) => !drop.has(t)).join(" "));
-  };
-}
-function setClassesFromObject(el, classObject) {
-  const forAdd = Object.entries(classObject).flatMap(([classString, on]) => on ? splitClassTokens(classString) : []).filter(Boolean);
-  const forRemove = Object.entries(classObject).flatMap(([classString, on]) => !on ? splitClassTokens(classString) : []).filter(Boolean);
-  const tokens = splitClassTokens(el.getAttribute("class") || el.className || "");
-  const set = new Set(tokens);
-  const added = [];
-  const removed = [];
-  for (const t of forRemove) {
-    if (set.has(t)) {
-      set.delete(t);
-      removed.push(t);
-    }
-  }
-  for (const t of forAdd) {
-    if (!set.has(t)) {
-      set.add(t);
-      added.push(t);
-    }
-  }
-  el.setAttribute("class", [...set].join(" "));
-  return () => {
-    const cur = new Set(splitClassTokens(el.getAttribute("class") || el.className || ""));
-    for (const t of removed)
-      cur.add(t);
-    for (const t of added)
-      cur.delete(t);
-    el.setAttribute("class", [...cur].join(" "));
-  };
-}
-function applyClassBinding(el, result) {
-  const prev = boundClassUndo.get(el);
-  if (prev)
-    prev();
-  let undo = () => {};
-  if (typeof result === "function") {
-    applyClassBinding(el, result());
+    if (DEBUG2)
+      console.warn("[m] action:", expr, err);
     return;
   }
-  if (typeof result === "object" && result && !Array.isArray(result)) {
-    undo = setClassesFromObject(el, result);
-  } else if (Array.isArray(result)) {
-    undo = setClassesFromString(el, result.filter(Boolean).join(" "));
-  } else if (result != null && result !== false && result !== "") {
-    undo = setClassesFromString(el, String(result));
-  }
-  boundClassUndo.set(el, undo);
-}
-function kebabCaseStyle(key) {
-  if (key.startsWith("--"))
-    return key;
-  return String(key).replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
-}
-function setStylesFromObject(el, value) {
-  const previous = {};
-  for (const [rawKey, rawVal] of Object.entries(value || {})) {
-    const key = kebabCaseStyle(rawKey);
-    previous[key] = el.style.getPropertyValue(key);
-    if (rawVal == null || rawVal === false || rawVal === "") {
-      el.style.removeProperty(key);
-    } else {
-      el.style.setProperty(key, String(rawVal));
-    }
-  }
-  return () => {
-    for (const [key, prev] of Object.entries(previous)) {
-      if (prev)
-        el.style.setProperty(key, prev);
-      else
-        el.style.removeProperty(key);
-    }
-  };
-}
-function applyStyleBinding(el, result) {
-  const prev = boundStyleUndo.get(el);
-  if (prev)
-    prev();
-  let undo = () => {};
-  if (typeof result === "object" && result) {
-    undo = setStylesFromObject(el, result);
-  } else if (result != null && result !== false) {
-    const cache = el.getAttribute("style");
-    el.setAttribute("style", String(result));
-    undo = () => {
-      if (cache == null || cache === "")
-        el.removeAttribute("style");
-      else
-        el.setAttribute("style", cache);
-    };
-  }
-  boundStyleUndo.set(el, undo);
-}
-function applyBinding(el, prop, result) {
-  if (prop === "class" || prop === "className") {
-    applyClassBinding(el, result);
-  } else if (prop === "style") {
-    applyStyleBinding(el, result);
-  } else if (prop === "disabled" || prop === "checked" || prop === "readonly" || prop === "required" || prop === "multiple" || prop === "selected") {
-    el[prop] = !!result;
-    if (!result)
-      el.removeAttribute(prop);
-    else
-      el.setAttribute(prop, "");
-  } else if (prop === "value") {
-    if (el.tagName === "OPTION") {
-      if (el.getAttribute("value") !== String(result ?? "")) {
-        el.setAttribute("value", String(result ?? ""));
-      }
-    } else if (el.value !== String(result ?? "")) {
-      el.value = result ?? "";
-    }
-  } else if (result == null || result === false) {
-    el.removeAttribute(prop);
-  } else {
-    el.setAttribute(prop, result === true ? "" : String(result));
-  }
-}
-function stringify(v) {
-  if (v == null || v === false)
-    return "";
-  return String(v);
-}
-function processElement(el, parentScope) {
-  if (el.hasAttribute("x-ignore") || el.hasAttribute("m-ignore")) {
-    return false;
-  }
-  const dirs = [];
-  for (const attr of [...el.attributes]) {
-    if (!isDir(attr.name))
-      continue;
-    const parsed = parseDirective(attr.name);
-    dirs.push({ ...parsed, expression: attr.value, attrName: attr.name });
-  }
-  dirs.sort((a, b) => dirPriority(a.type) - dirPriority(b.type));
-  let scope = parentScope || closestData(el) || {};
-  let skipChildren = false;
-  for (const dir of dirs) {
-    const { type, arg, modifiers, expression, attrName } = dir;
-    if (type !== "cloak" && type !== "data") {
-      if (type !== "ref")
-        el.removeAttribute(attrName);
-    }
-    switch (type) {
-      case "ignore":
-        return false;
-      case "ref":
-        break;
-      case "data": {
-        scope = initData(el, expression, parentScope);
-        break;
-      }
-      case "init": {
-        const stop = effect(() => {});
-        stop();
-        queueMicrotask(() => evaluateAction(expression, scope, el));
-        addCleanup(el, () => {});
-        break;
-      }
-      case "for": {
-        processFor(el, expression, scope);
-        return false;
-      }
-      case "if": {
-        processIf(el, expression, scope);
-        return false;
-      }
-      case "text": {
-        const stop = effect(() => {
-          el.textContent = stringify(evaluate(expression, scope, el));
-        });
-        addCleanup(el, stop);
-        break;
-      }
-      case "html": {
-        const stop = effect(() => {
-          el.innerHTML = stringify(evaluate(expression, scope, el));
-        });
-        addCleanup(el, stop);
-        break;
-      }
-      case "show": {
-        const transition = dirs.some((d) => d.type === "transition");
-        const stop = effect(() => {
-          const show = !!evaluate(expression, scope, el);
-          applyShow(el, show, transition);
-        });
-        addCleanup(el, stop);
-        break;
-      }
-      case "transition":
-        el.removeAttribute(attrName);
-        break;
-      case "model": {
-        processModel(el, expression, scope, modifiers);
-        break;
-      }
-      case "bind": {
-        const prop = arg || "value";
-        if (prop === "class" || prop === "className") {
-          const cur = el.getAttribute("class");
-          el.removeAttribute("class");
-          if (cur != null && cur !== "")
-            el.setAttribute("class", cur);
-        }
-        const stop = effect(() => {
-          applyBinding(el, prop, evaluate(expression, scope, el));
-        });
-        addCleanup(el, () => {
-          stop();
-          if (prop === "class" || prop === "className") {
-            const u = boundClassUndo.get(el);
-            if (u)
-              u();
-            boundClassUndo.delete(el);
-          } else if (prop === "style") {
-            const u = boundStyleUndo.get(el);
-            if (u)
-              u();
-            boundStyleUndo.delete(el);
-          }
-        });
-        break;
-      }
-      case "on": {
-        processOn(el, arg || "click", expression, scope, modifiers);
-        break;
-      }
-      case "effect": {
-        const stop = effect(() => {
-          evaluateAction(expression, scope, el);
-        });
-        addCleanup(el, stop);
-        break;
-      }
-      case "cloak":
-        el.removeAttribute(attrName);
-        el.removeAttribute("x-cloak");
-        el.removeAttribute("m-cloak");
-        break;
-      case "mount": {
-        let mounted = null;
-        const stop = effect(() => {
-          const child = evaluate(expression, scope, el);
-          if (!child)
-            return;
-          if (mounted !== child) {
-            mounted = child;
-            mountComponent(el, child);
-          }
-        });
-        addCleanup(el, stop);
-        break;
-      }
-      default:
-        if (DEBUG)
-          console.warn("[m] unknown directive", type);
-    }
-  }
-  return !skipChildren;
-}
-function initData(el, expression, parentScope) {
-  let data;
-  const expr = expression.trim() === "" ? "{}" : expression.trim();
-  const named = expr.match(/^([A-Za-z_$][\w$]*)(\s*\(.*\))?$/);
-  if (named && dataRegistry.has(named[1])) {
-    const factory = dataRegistry.get(named[1]);
-    if (named[2]) {
-      const args = evaluate(`([...${named[2]}])`, parentScope || {}, el) || [];
-      data = factory(...args);
-    } else {
-      data = factory();
-    }
-  } else {
-    data = evaluate(expr, parentScope || {}, el);
-  }
-  if (data == null || data === true)
-    data = {};
-  if (typeof data !== "object")
-    data = { value: data };
-  if (parentScope) {
-    const parentRaw = parentScope[RAW] || parentScope;
-    Object.setPrototypeOf(data, parentRaw);
-  }
-  const proxy = reactive(data);
-  elementData.set(el, proxy);
-  if (typeof proxy.init === "function") {
-    queueMicrotask(() => {
-      try {
-        proxy.init();
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-  addCleanup(el, () => {
-    if (typeof proxy.destroy === "function") {
-      try {
-        proxy.destroy();
-      } catch (_) {}
-    }
-  });
-  return proxy;
-}
-function applyShow(el, show, withTransition) {
-  if (withTransition) {
-    if (show) {
-      el.style.display = "";
-      el.style.opacity = "0";
-      el.offsetHeight;
-      el.style.transition = "opacity 150ms ease";
-      el.style.opacity = "1";
-    } else {
-      el.style.transition = "opacity 150ms ease";
-      el.style.opacity = "0";
-      const done = () => {
-        if (el.style.opacity === "0")
-          el.style.display = "none";
-        el.removeEventListener("transitionend", done);
-      };
-      el.addEventListener("transitionend", done);
-      setTimeout(done, 160);
-    }
-  } else {
-    el.style.display = show ? "" : "none";
-  }
-}
-function processModel(el, expression, scope, modifiers) {
-  const tag = el.tagName;
-  const type = el.getAttribute("type");
-  const stop = effect(() => {
-    const val = evaluate(expression, scope, el);
-    if (tag === "INPUT" && (type === "checkbox" || type === "radio")) {
-      el.checked = !!val;
-    } else if (el.value !== stringify(val)) {
-      el.value = stringify(val);
-    }
-  });
-  addCleanup(el, stop);
-  const event = modifiers.includes("lazy") || tag === "SELECT" ? "change" : "input";
-  const handler = (e) => {
-    const t = e.target;
-    let value;
-    if (t.type === "checkbox")
-      value = t.checked;
-    else if (t.type === "number")
-      value = t.value === "" ? null : Number(t.value);
-    else
-      value = t.value;
-    if (modifiers.includes("number"))
-      value = parseFloat(value);
-    assignPath(scope, expression, value);
-  };
-  el.addEventListener(event, handler);
-  addCleanup(el, () => el.removeEventListener(event, handler));
 }
 function assignPath(scope, path, value) {
-  const trimmed = path.trim();
+  const trimmed = String(path).trim();
   if (trimmed.startsWith("$store.")) {
     const parts2 = trimmed.slice(7).split(".");
     let obj2 = getStoresRoot();
@@ -1171,312 +1546,558 @@ function assignPath(scope, path, value) {
   }
   obj[parts[parts.length - 1]] = value;
 }
-function findReactiveRoot(scope) {
-  let cur = scope;
-  let best = null;
-  const seen = new Set;
-  while (cur && typeof cur === "object" && !seen.has(cur)) {
-    seen.add(cur);
-    if (cur[REACTIVE]) {
-      best = cur;
+function createDataScope(expression, parentScope, ctx) {
+  let data;
+  const expr = (expression ?? "").trim() === "" ? "{}" : expression.trim();
+  const named = expr.match(/^([A-Za-z_$][\w$]*)(\s*\(.*\))?$/);
+  if (named && dataRegistry.has(named[1])) {
+    const factory = dataRegistry.get(named[1]);
+    if (named[2]) {
+      const inner = named[2].trim().slice(1, -1);
+      const args = inner ? evaluate(`[${inner}]`, parentScope || {}, ctx) || [] : [];
+      data = factory(...args);
     } else {
-      const proxied = proxyMap.get(cur);
-      if (proxied)
-        best = proxied;
+      data = factory();
     }
-    const raw = cur[RAW] || cur;
-    cur = Object.getPrototypeOf(raw);
+  } else {
+    data = evaluate(expr, parentScope || {}, ctx);
   }
-  return best || scope;
+  if (data == null || data === true)
+    data = {};
+  if (typeof data !== "object")
+    data = { value: data };
+  if (parentScope) {
+    const parentRaw = parentScope[RAW] || parentScope;
+    if (data !== parentRaw && Object.getPrototypeOf(data) !== parentRaw) {
+      Object.setPrototypeOf(data, parentRaw);
+    }
+  }
+  return reactive(data);
 }
-function processOn(el, event, expression, scope, modifiers) {
-  let target = el;
-  let eventName = event;
-  if (modifiers.includes("window"))
-    target = window;
-  if (modifiers.includes("document"))
-    target = document;
-  if (modifiers.includes("outside")) {
-    const handler2 = (e) => {
-      if (el.contains(e.target))
-        return;
-      run();
-    };
-    const run = () => evaluateAction(expression, scope, el, null);
-    document.addEventListener("click", handler2);
-    addCleanup(el, () => document.removeEventListener("click", handler2));
+function stringify(v) {
+  if (v == null || v === false)
+    return "";
+  return String(v);
+}
+
+// src/build.js
+var BOOLEAN_ATTRS = new Set([
+  "disabled",
+  "readonly",
+  "required",
+  "hidden",
+  "multiple",
+  "open",
+  "autofocus",
+  "autoplay",
+  "controls",
+  "default",
+  "defer",
+  "ismap",
+  "loop",
+  "novalidate",
+  "reversed",
+  "async",
+  "inert"
+]);
+var PROPERTY_ATTRS2 = new Set(["value", "checked", "selected", "indeterminate"]);
+function splitClassTokens(s) {
+  return String(s || "").split(/\s+/).filter(Boolean);
+}
+function classToString(value) {
+  if (value == null || value === false)
+    return "";
+  if (typeof value === "string")
+    return value;
+  if (Array.isArray(value))
+    return value.map(classToString).filter(Boolean).join(" ");
+  if (typeof value === "object") {
+    return Object.entries(value).filter(([, on]) => !!on).map(([k]) => k).join(" ");
+  }
+  return String(value);
+}
+function styleToString(value) {
+  if (value == null || value === false)
+    return "";
+  if (typeof value === "string")
+    return value;
+  if (typeof value !== "object")
+    return String(value);
+  return Object.entries(value).filter(([, v]) => v != null && v !== false && v !== "").map(([k, v]) => `${kebab(k)}:${v}`).join(";");
+}
+function kebab(k) {
+  return k.startsWith("--") ? k : k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+}
+function mergeClass(attrs, extra) {
+  const add = splitClassTokens(classToString(extra));
+  if (!add.length)
+    return;
+  const have = splitClassTokens(attrs.class);
+  const seen = new Set(have);
+  for (const t of add)
+    if (!seen.has(t)) {
+      have.push(t);
+      seen.add(t);
+    }
+  attrs.class = have.join(" ");
+}
+function mergeStyle(attrs, extra) {
+  const add = styleToString(extra);
+  if (!add)
+    return;
+  const base = String(attrs.style || "").trim().replace(/;$/, "");
+  attrs.style = base ? `${base};${add}` : add;
+}
+function applyBind(attrs, prop, value) {
+  if (prop === "class" || prop === "className")
+    return mergeClass(attrs, value);
+  if (prop === "style")
+    return mergeStyle(attrs, value);
+  if (PROPERTY_ATTRS2.has(prop)) {
+    attrs[prop] = value;
     return;
   }
-  const handler = (e) => {
+  if (BOOLEAN_ATTRS.has(prop)) {
+    if (value)
+      attrs[prop] = prop;
+    else
+      delete attrs[prop];
+    return;
+  }
+  if (value == null || value === false) {
+    delete attrs[prop];
+    return;
+  }
+  if (value === true) {
+    attrs[prop] = prop;
+    return;
+  }
+  attrs[prop] = String(value);
+}
+var EVENT_KEY_ALIASES = {
+  enter: "Enter",
+  escape: "Escape",
+  space: " ",
+  tab: "Tab",
+  up: "ArrowUp",
+  down: "ArrowDown",
+  left: "ArrowLeft",
+  right: "ArrowRight",
+  delete: ["Backspace", "Delete"]
+};
+function matchesEventModifiers(el, event, modifiers) {
+  if (modifiers.includes("self") && event.target !== el)
+    return false;
+  for (const modifier of ["ctrl", "shift", "alt", "meta"]) {
+    if (modifiers.includes(modifier) && !event[`${modifier}Key`])
+      return false;
+  }
+  const wantedKeys = modifiers.filter((modifier) => Object.hasOwn(EVENT_KEY_ALIASES, modifier)).flatMap((modifier) => EVENT_KEY_ALIASES[modifier]);
+  return wantedKeys.length === 0 || wantedKeys.includes(event.key);
+}
+function makeHandler(dir, scope, ctx) {
+  const { arg, modifiers, expression } = dir;
+  const outside = modifiers.includes("outside");
+  const handler = function(e) {
+    const s = handler.$scope;
+    const c = handler.$ctx;
+    const el = handler.host ?? e.currentTarget;
+    if (outside) {
+      if (!el || el.contains(e.target))
+        return;
+    } else {
+      if (el && !matchesEventModifiers(el, e, modifiers))
+        return;
+    }
     if (modifiers.includes("prevent"))
       e.preventDefault();
     if (modifiers.includes("stop"))
       e.stopPropagation();
-    if (modifiers.includes("once")) {
-      target.removeEventListener(eventName, handler);
-    }
-    const expr = expression.trim();
-    const self = findReactiveRoot(scope);
-    if (/^[A-Za-z_$][\w$]*$/.test(expr)) {
-      const fn = evaluate(expr, scope, el);
+    const local = { ...c, getEl: () => el };
+    const expr = String(handler.$expr).trim();
+    const bare = expr.match(/^[A-Za-z_$][\w$.]*$/);
+    if (bare) {
+      const fn = evaluate(expr, s, local);
       if (typeof fn === "function") {
-        fn.call(self, e);
+        fn.call(findReactiveRoot(s), e);
         return;
       }
     }
-    const call = expr.match(/^([A-Za-z_$][\w$]*)\(([\s\S]*)\)\s*$/);
-    if (call) {
-      const fn = evaluate(call[1], scope, el);
-      if (typeof fn === "function") {
-        const argsSrc = call[2].trim();
-        const args = argsSrc ? evaluate(`[${argsSrc}]`, scope, el, e) || [] : [];
-        fn.apply(self, Array.isArray(args) ? args : []);
-        return;
-      }
-    }
-    evaluateAction(expr, scope, el, e);
+    evaluateAction(expr, s, local, e);
   };
-  const opts = {};
-  if (modifiers.includes("passive"))
-    opts.passive = true;
-  if (modifiers.includes("capture"))
-    opts.capture = true;
-  let finalHandler = handler;
-  if (modifiers.includes("debounce")) {
-    let t;
-    finalHandler = (e) => {
-      clearTimeout(t);
-      t = setTimeout(() => handler(e), 250);
-    };
+  handler.$scope = scope;
+  handler.$ctx = ctx;
+  handler.$expr = expression;
+  const key = `m:on:${arg}:${modifiers.join(".")}:${expression}`;
+  handler.toString = () => key;
+  handler.rebind = (live) => {
+    live.$scope = handler.$scope;
+    live.$ctx = handler.$ctx;
+    live.$expr = handler.$expr;
+  };
+  if (modifiers.includes("window"))
+    handler.target = "window";
+  else if (modifiers.includes("document") || outside)
+    handler.target = "document";
+  if (modifiers.includes("once"))
+    handler.opts = { once: true };
+  if (modifiers.includes("passive")) {
+    handler.opts = { ...handler.opts || {}, passive: true };
   }
-  if (modifiers.includes("throttle")) {
-    let locked = false;
-    finalHandler = (e) => {
-      if (locked)
-        return;
-      locked = true;
-      handler(e);
-      setTimeout(() => {
-        locked = false;
-      }, 250);
-    };
+  if (modifiers.includes("capture")) {
+    handler.opts = { ...handler.opts || {}, capture: true };
   }
-  target.addEventListener(eventName, finalHandler, opts);
-  addCleanup(el, () => target.removeEventListener(eventName, finalHandler, opts));
+  return handler;
 }
-function processFor(el, expression, scope) {
-  const match = expression.match(/^\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*))?\s+in\s+(.+)$/);
-  if (!match) {
-    console.warn("[m] bad x-for", expression);
+function eventAttrName(dir) {
+  const outside = dir.modifiers.includes("outside");
+  const event = outside ? "click" : dir.arg || "click";
+  const mods = dir.modifiers.join(".");
+  return mods ? `on${event}|${mods}` : `on${event}`;
+}
+function applyModel(attrs, ast, dir, scope, ctx) {
+  const type = ast.attrs.type;
+  const isCheckbox = ast.tag === "input" && (type === "checkbox" || type === "radio");
+  const value = evaluate(dir.expression, scope, ctx);
+  if (isCheckbox)
+    attrs.checked = !!value;
+  else
+    attrs.value = stringify(value);
+  const eventName = dir.modifiers.includes("lazy") || ast.tag === "select" ? "change" : "input";
+  const handler = function(e) {
+    const t = e.target;
+    let next;
+    if (t.type === "checkbox")
+      next = t.checked;
+    else if (t.type === "number")
+      next = t.value === "" ? null : Number(t.value);
+    else
+      next = t.value;
+    if (dir.modifiers.includes("number"))
+      next = parseFloat(next);
+    if (dir.modifiers.includes("trim") && typeof next === "string") {
+      next = next.trim();
+    }
+    assignPath(handler.$scope, handler.$expr, next);
+  };
+  handler.$scope = scope;
+  handler.$expr = dir.expression;
+  const key = `m:model:${eventName}:${dir.expression}`;
+  handler.toString = () => key;
+  handler.rebind = (live) => {
+    live.$scope = handler.$scope;
+    live.$expr = handler.$expr;
+  };
+  attrs[`on${eventName}`] = handler;
+}
+function applyShow(attrs, ast, scope, ctx) {
+  const show = !!evaluate(ast.show.expression, scope, ctx);
+  if (!ast.transition) {
+    if (!show)
+      mergeStyle(attrs, "display:none");
     return;
   }
-  const [, itemName, indexName, listExpr] = match;
-  const keyExpr = el.getAttribute(":key") || el.getAttribute("x-bind:key") || el.getAttribute("m-bind:key") || null;
-  if (keyExpr) {
-    el.removeAttribute(":key");
-    el.removeAttribute("x-bind:key");
-    el.removeAttribute("m-bind:key");
+  const ms = transitionMs(ast.transition);
+  if (show) {
+    mergeStyle(attrs, `opacity:1;visibility:visible;transition:opacity ${ms}ms ease`);
+  } else {
+    mergeStyle(attrs, `opacity:0;visibility:hidden;transition:opacity ${ms}ms ease,visibility 0s ${ms}ms`);
   }
-  const isTemplate = el.tagName === "TEMPLATE";
-  const anchor = document.createComment(`x-for: ${expression}`);
-  el.parentNode.insertBefore(anchor, el);
-  el.remove();
-  let lookup = new Map;
-  const parentRaw = scope?.[RAW] || scope || {};
-  function makeRowScope(item, index) {
-    const locals = { [itemName]: item };
-    if (indexName)
-      locals[indexName] = index;
-    else
-      locals.$index = index;
-    Object.setPrototypeOf(locals, parentRaw);
-    return reactive(locals);
+}
+function transitionMs(dir) {
+  const dur = dir.modifiers.find((m) => /^duration$/.test(m));
+  if (dur) {
+    const i = dir.modifiers.indexOf(dur);
+    const n = parseInt(dir.modifiers[i + 1], 10);
+    if (Number.isFinite(n))
+      return n;
   }
-  function refreshRowScope(rowScope, item, index) {
-    rowScope[itemName] = item;
-    if (indexName)
-      rowScope[indexName] = index;
-    else
-      rowScope.$index = index;
+  return 150;
+}
+function buildTemplate(html, scope, ctx) {
+  return buildFragment(parseTemplate(html), scope, ctx);
+}
+function buildFragment(astList, scope, ctx) {
+  const siblings = {};
+  for (let i = 0;i < astList.length; i++) {
+    const v = buildNode(astList[i], scope, ctx);
+    if (v != null && v !== false)
+      siblings[`_${i}`] = v;
   }
-  const stop = effect(() => {
-    let list = evaluate(listExpr, scope, anchor.parentElement);
-    if (list == null)
-      list = [];
-    if (typeof list === "number" && Number.isFinite(list)) {
-      list = Array.from({ length: list }, (_, i) => i + 1);
+  return volatile(siblings);
+}
+function buildNode(ast, scope, ctx) {
+  if (ast.kind === "text")
+    return TextVNode._factory(ast.text);
+  if (ast.for)
+    return buildFor(ast, scope, ctx);
+  if (ast.if && !evaluate(ast.if.expression, scope, ctx))
+    return null;
+  if (ast.isTemplate)
+    return buildFragment(ast.children, scope, ctx);
+  if (ast.data)
+    return buildDataComponent(ast, scope, ctx);
+  if (ast.mount)
+    return buildMount(ast, scope, ctx);
+  return buildElement(ast, scope, ctx);
+}
+function buildFor(ast, scope, ctx) {
+  const spec = ast.for;
+  if (!spec)
+    return null;
+  const list = evaluate(spec.list, scope, ctx);
+  const rows = normalizeList(list);
+  const parent = scope ?? {};
+  const siblings = {};
+  const seen = new Set;
+  rows.forEach(([item, index], i) => {
+    const locals = { [spec.item]: item, $index: i };
+    if (spec.index)
+      locals[spec.index] = index;
+    const rowScope = makeRowScope(parent, locals);
+    let key = ast.key ? evaluate(ast.key.expression, rowScope, ctx) : index;
+    let sid = `k:${String(key)}`;
+    if (seen.has(sid)) {
+      console.warn("[m] duplicate x-for key", key, spec.raw);
+      sid = `${sid}:${i}`;
     }
-    if (list instanceof Set || list instanceof Map) {
-      list = Array.from(list);
-    }
-    const isArr = Array.isArray(list);
-    let entries;
-    if (isArr) {
-      list.length;
-      entries = list.map((item, i) => [i, item]);
-    } else if (list && typeof list === "object") {
-      entries = Object.entries(list);
-    } else {
-      entries = [];
-    }
-    const oldLookup = lookup;
-    lookup = new Map;
-    const plan = [];
-    for (let i = 0;i < entries.length; i++) {
-      const index = isArr ? i : entries[i][0];
-      const item = entries[i][1];
-      let key;
-      if (keyExpr) {
-        const keyScope = makeRowScope(item, index);
-        key = evaluate(keyExpr, keyScope, anchor.parentElement);
-        if (key != null && typeof key === "object") {
-          console.warn("[m] x-for :key must be string/number, got object");
-          key = String(i);
-        }
-      } else {
-        key = index;
-      }
-      if (oldLookup.has(key)) {
-        lookup.set(key, oldLookup.get(key));
-        oldLookup.delete(key);
-      }
-      plan.push({ key, item, index });
-    }
-    for (const rec of oldLookup.values()) {
-      for (const node of rec.nodes) {
-        cleanupEl(node);
-        node.remove();
-      }
-    }
-    processFor._lastKeys = processFor._lastKeys || new WeakMap;
-    const lastKeys = processFor._lastKeys.get(anchor) || [];
-    const oldPos = new Map;
-    for (let i = 0;i < lastKeys.length; i++)
-      oldPos.set(lastKeys[i], i);
-    const moveMap = [];
-    for (let ni = 0;ni < plan.length; ni++) {
-      const k = plan[ni].key;
-      if (oldPos.has(k))
-        moveMap[oldPos.get(k)] = ni;
-    }
-    const stay = longestIncreasingSubsequence(moveMap);
-    const newKeys = [];
-    let prev = anchor;
-    for (let ni = 0;ni < plan.length; ni++) {
-      const { key, item, index } = plan[ni];
-      newKeys.push(key);
-      if (lookup.has(key)) {
-        const rec = lookup.get(key);
-        refreshRowScope(rec.scope, item, index);
-        for (const node of rec.nodes) {
-          const inPlace = prev.nextSibling === node;
-          if (!(stay.has(ni) && inPlace) && !inPlace && prev.parentNode) {
-            prev.parentNode.insertBefore(node, prev.nextSibling);
-          }
-          prev = node;
-        }
-        continue;
-      }
-      const childScope = makeRowScope(item, index);
-      const nodes = [];
-      if (isTemplate) {
-        const frag = el.content.cloneNode(true);
-        const wrap = document.createElement("div");
-        wrap.appendChild(frag);
-        for (const kid of [...wrap.childNodes]) {
-          if (kid.nodeType === 1) {
-            prev.parentNode.insertBefore(kid, prev.nextSibling);
-            prev = kid;
-            initTree(kid, childScope);
-            nodes.push(kid);
-          } else {
-            prev.parentNode.insertBefore(kid, prev.nextSibling);
-            prev = kid;
-          }
-        }
-      } else {
-        const node = el.cloneNode(true);
-        node.removeAttribute("x-for");
-        node.removeAttribute("m-for");
-        prev.parentNode.insertBefore(node, prev.nextSibling);
-        prev = node;
-        initTree(node, childScope);
-        nodes.push(node);
-      }
-      lookup.set(key, { nodes, scope: childScope });
-    }
-    processFor._lastKeys.set(anchor, newKeys);
+    seen.add(sid);
+    const body = ast.isTemplate ? buildFragment(ast.children, rowScope, ctx) : buildElement(ast, rowScope, ctx);
+    siblings[sid] = body;
   });
-  addCleanup(anchor.parentElement || document.body, () => {
-    stop();
-    for (const rec of lookup.values()) {
-      for (const node of rec.nodes) {
-        cleanupEl(node);
-        node.remove();
+  return volatile(siblings);
+}
+function makeRowScope(parent, locals) {
+  return new Proxy(locals, {
+    has(t, k) {
+      return k in t || parent != null && k in parent;
+    },
+    get(t, k) {
+      if (Object.prototype.hasOwnProperty.call(t, k))
+        return t[k];
+      return parent?.[k];
+    },
+    set(t, k, v) {
+      if (Object.prototype.hasOwnProperty.call(t, k) || parent == null) {
+        t[k] = v;
+        return true;
       }
+      parent[k] = v;
+      return true;
     }
-    lookup.clear();
-    processFor._lastKeys?.delete(anchor);
   });
 }
-processFor._lastKeys = undefined;
-function processIf(el, expression, scope) {
-  const isTemplate = el.tagName === "TEMPLATE";
-  const anchor = document.createComment(`x-if: ${expression}`);
-  el.parentNode.insertBefore(anchor, el);
-  el.remove();
-  let nodes = [];
-  const stop = effect(() => {
-    const show = !!evaluate(expression, scope, anchor.parentElement);
-    for (const n of nodes) {
-      cleanupEl(n);
-      n.remove();
+function normalizeList(list) {
+  if (list == null)
+    return [];
+  if (Array.isArray(list))
+    return list.map((v, i) => [v, i]);
+  if (typeof list === "number") {
+    return Array.from({ length: list }, (_, i) => [i + 1, i]);
+  }
+  if (typeof list[Symbol.iterator] === "function") {
+    return [...list].map((v, i) => [v, i]);
+  }
+  if (typeof list === "object") {
+    return Object.entries(list).map(([k, v]) => [v, k]);
+  }
+  return [];
+}
+function componentClassFor(ast) {
+  if (ast._cls)
+    return ast._cls;
+
+  class DataComponent extends Component {
+    oninit() {
+      this.refs = {};
+      this.ctx = { refs: this.refs, getEl: () => this.rootDom };
+      this.scope = createDataScope(ast.data.expression, this.attrs.parentScope, this.ctx);
+      if (typeof this.scope.init === "function") {
+        queueMicrotask(() => {
+          try {
+            this.scope.init();
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      }
     }
-    nodes = [];
-    if (!show)
+    onbeforeupdate() {
+      const parent = this.attrs.parentScope;
+      if (parent) {
+        const raw = this.scope[RAW] || this.scope;
+        const parentRaw = parent[RAW] || parent;
+        if (Object.getPrototypeOf(raw) !== parentRaw && raw !== parentRaw) {
+          Object.setPrototypeOf(raw, parentRaw);
+        }
+      }
+    }
+    view() {
+      const v = buildElement(ast, this.scope, this.ctx);
+      if (v) {
+        const prev = v.oncreate;
+        v.oncreate = (dom) => {
+          this.rootDom = dom;
+          prev?.(dom);
+        };
+      }
+      return v;
+    }
+    onremove() {
+      if (typeof this.scope?.destroy === "function") {
+        try {
+          this.scope.destroy();
+        } catch (_) {}
+      }
+    }
+  }
+  Object.defineProperty(DataComponent, "name", { value: `x-data(${ast.tag})` });
+  ast._cls = DataComponent;
+  return DataComponent;
+}
+function buildDataComponent(ast, scope, ctx) {
+  return ComponentVNode._factory(componentClassFor(ast), { parentScope: scope });
+}
+var mountClasses = new WeakMap;
+function mountClassFor(config) {
+  let cls = mountClasses.get(config);
+  if (cls)
+    return cls;
+  cls = class MountComponent extends Component {
+    oninit() {
+      this.refs = {};
+      this.ctx = { refs: this.refs, getEl: () => null };
+      if (typeof this.attrs.config.init === "function") {
+        queueMicrotask(() => {
+          try {
+            this.attrs.config.init();
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      }
+    }
+    view() {
+      const cfg = this.attrs.config;
+      return buildTemplate(cfg.template || "", cfg, this.ctx);
+    }
+    onremove() {
+      const cfg = this.attrs.config;
+      if (typeof cfg?.destroy === "function") {
+        try {
+          cfg.destroy();
+        } catch (_) {}
+      }
+    }
+  };
+  mountClasses.set(config, cls);
+  return cls;
+}
+function buildMount(ast, scope, ctx) {
+  const config = evaluate(ast.mount.expression, scope, ctx);
+  if (!config || typeof config !== "object")
+    return null;
+  const host = buildElement({ ...ast, mount: null, children: [] }, scope, ctx);
+  if (!host)
+    return null;
+  host.children = autoDetect([
+    ComponentVNode._factory(mountClassFor(config[RAW] || config), { config })
+  ]);
+  return host;
+}
+function buildElement(ast, scope, ctx) {
+  if (ast.ignore) {
+    const v = RawHTMLVNode.factory(ast.tag, { ...ast.attrs }, ast.raw || "");
+    return v;
+  }
+  const attrs = { ...ast.attrs };
+  if (ast.cloak)
+    delete attrs["x-cloak"];
+  if (ast.binds) {
+    for (const b of ast.binds) {
+      applyBind(attrs, b.arg || "value", evaluate(b.expression, scope, ctx));
+    }
+  }
+  if (ast.show)
+    applyShow(attrs, ast, scope, ctx);
+  if (ast.model)
+    applyModel(attrs, ast, ast.model, scope, ctx);
+  if (ast.on) {
+    for (const o of ast.on) {
+      attrs[eventAttrName(o)] = makeHandler(o, scope, ctx);
+    }
+  }
+  let vnode;
+  if (ast.html) {
+    const html = stringify(evaluate(ast.html.expression, scope, ctx));
+    vnode = RawHTMLVNode.factory(ast.tag, attrs, html);
+  } else {
+    let children;
+    if (ast.text) {
+      const text = stringify(evaluate(ast.text.expression, scope, ctx));
+      children = autoDetect([TextVNode._factory(text)]);
+    } else {
+      children = buildFragment(ast.children, scope, ctx);
+    }
+    vnode = ast.ns === HTML_NS ? HTMLElementVNode.factory(ast.tag, attrs, children) : ElementVNode.factory(ast.ns, ast.tag, attrs, children);
+  }
+  attachLifecycle(vnode, ast, scope, ctx);
+  return vnode;
+}
+function attachLifecycle(vnode, ast, scope, ctx) {
+  const needsBox = !!(ast.effects || ast.init);
+  if (!ast.ref && !needsBox)
+    return;
+  if (needsBox) {
+    vnode.rebind = (box) => {
+      box.scope = scope;
+      box.ctx = ctx;
+    };
+  }
+  const prev = vnode.oncreate;
+  vnode.oncreate = (dom) => {
+    prev?.(dom);
+    if (ast.ref)
+      ctx.refs[ast.ref] = dom;
+    if (!needsBox)
       return;
-    if (isTemplate) {
-      const frag = el.content.cloneNode(true);
-      const wrap = document.createElement("div");
-      wrap.appendChild(frag);
-      let insertAfter = anchor;
-      for (const kid of [...wrap.childNodes]) {
-        insertAfter.parentNode.insertBefore(kid, insertAfter.nextSibling);
-        insertAfter = kid;
-        if (kid.nodeType === 1) {
-          initTree(kid, scope);
-          nodes.push(kid);
-        }
-      }
-    } else {
-      const node = el.cloneNode(true);
-      node.removeAttribute("x-if");
-      node.removeAttribute("m-if");
-      anchor.parentNode.insertBefore(node, anchor.nextSibling);
-      initTree(node, scope);
-      nodes.push(node);
+    const box = { scope, ctx: { ...ctx, getEl: () => dom } };
+    vnode._box = box;
+    const stops = [];
+    if (ast.init) {
+      queueMicrotask(() => evaluateAction(ast.init.expression, box.scope, {
+        ...box.ctx,
+        getEl: () => dom
+      }));
     }
-  });
-  addCleanup(anchor.parentElement || document.body, stop);
+    if (ast.effects) {
+      for (const e of ast.effects) {
+        stops.push(effect(() => evaluateAction(e.expression, box.scope, {
+          ...box.ctx,
+          getEl: () => dom
+        })));
+      }
+    }
+    vnode._cleanup = () => {
+      for (const s of stops)
+        s();
+    };
+  };
 }
-function initTree(el, scope) {
-  const root = el === document ? document.body : el;
-  walk(root, (node) => {
-    const parentScope = scope || closestData(node.parentElement) || closestData(node) || {};
-    const cont = processElement(node, elementData.get(node) || parentScope);
-    return cont;
-  });
-}
-function destroyTree(el) {
-  cleanupEl(el);
-}
+
+// src/m.js
+var VERSION = "3.1.0";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;
-var instanceCache = new Map;
+var rootCtx = null;
+var oldRoot = null;
 var renderCount = 0;
+var refreshRequestCount = 0;
 var alreadyRedrawing = false;
+var deferredBatchRedraw = false;
 var deferredQueued = false;
+var mounts = new Set;
 function instantiate(configOrFactory, attrs = {}) {
   let config = typeof configOrFactory === "function" ? configOrFactory(attrs) : configOrFactory;
   if (config == null || typeof config !== "object") {
@@ -1489,31 +2110,41 @@ function instantiate(configOrFactory, attrs = {}) {
   config.$attrs = attrs;
   return reactive(config);
 }
-function mountComponent(el, configOrFactory, cacheKey) {
-  let instance = cacheKey && instanceCache.has(cacheKey) ? instanceCache.get(cacheKey) : null;
-  const isNew = !instance;
-  if (!instance) {
-    instance = instantiate(configOrFactory);
-    if (cacheKey)
-      instanceCache.set(cacheKey, instance);
-  }
-  destroyTree(el);
-  el.innerHTML = instance.template || "";
-  elementData.set(el, instance);
-  for (const child of [...el.children]) {
-    initTree(child, instance);
-  }
-  if (isNew && typeof instance.init === "function") {
-    queueMicrotask(() => {
-      try {
-        instance.init();
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-  return instance;
+function renderRoot() {
+  if (!rootInstance)
+    return null;
+  return buildTemplate(rootInstance.template || "", rootInstance, rootCtx);
 }
+function drainLifecycle() {
+  const hooks = delayedLifecycleEvents.splice(0, delayedLifecycleEvents.length);
+  for (const hook of hooks) {
+    try {
+      hook();
+    } catch (e) {
+      console.error("[m] lifecycle", e);
+    }
+  }
+}
+function performRedraw() {
+  bumpRedrawCount();
+  if (rootEl && rootFactory) {
+    if (!rootInstance) {
+      rootInstance = instantiate(rootFactory());
+      rootCtx = { refs: {}, getEl: () => rootEl };
+    }
+    const next = renderRoot();
+    updateNodes(rootEl, oldRoot, next, null);
+    oldRoot = next;
+  }
+  for (const mount of mounts) {
+    const next = buildFragment(mount.ast, mount.scope, mount.ctx);
+    updateNodes(mount.parent, mount.old, next, mount.nextSibling);
+    mount.old = next;
+  }
+  drainLifecycle();
+  renderCount++;
+}
+var instanceCache = new Map;
 function clearInstances() {
   for (const inst of instanceCache.values()) {
     if (typeof inst.destroy === "function") {
@@ -1523,12 +2154,57 @@ function clearInstances() {
     }
   }
   instanceCache.clear();
-  rootInstance = null;
+}
+function initTree(el, scope) {
+  const root = el === document ? document.body : el;
+  if (!root)
+    return root;
+  if (root === document.body || root.tagName === "BODY") {
+    const out = [];
+    for (const child of [...root.children])
+      out.push(initTree(child, scope));
+    return out[0] ?? root;
+  }
+  const ast = [parseElement(root)].filter(Boolean);
+  const ctx = { refs: {}, getEl: () => null };
+  const mount = {
+    ast,
+    scope: scope ?? {},
+    ctx,
+    parent: root.parentNode,
+    nextSibling: root.nextSibling,
+    old: null
+  };
+  if (!mount.parent)
+    return root;
+  root.remove();
+  const next = buildFragment(ast, mount.scope, ctx);
+  updateNodes(mount.parent, null, next, mount.nextSibling);
+  mount.old = next;
+  mounts.add(mount);
+  drainLifecycle();
+  const first = next._siblings[next._keys[0]]?.vnode;
+  const dom = first?._getNextSibling()?.dom ?? null;
+  if (dom)
+    mount.el = dom;
+  return dom ?? root;
+}
+function destroyTree(el) {
+  for (const mount of [...mounts]) {
+    if (!mount.old)
+      continue;
+    if (mount.el === el || el && mount.el && el.contains(mount.el)) {
+      FragmentVNode._delete(mount.old, mount.parent);
+      mounts.delete(mount);
+    }
+  }
 }
 var M = {
   version: VERSION,
-  reactive,
-  effect,
+  set debug(on) {
+    setDebug(on);
+    setDebug2(on);
+  },
   data(name, factory) {
     dataRegistry.set(name, factory);
     return factory;
@@ -1536,39 +2212,31 @@ var M = {
   store(name, value) {
     const bucket = storeBucket();
     const root = getStoresRoot();
-    if (value === undefined) {
+    if (value === undefined)
       return root[name];
-    }
-    if (bucket.has(name) && typeof value === "object" && value) {
-      const existing = bucket.get(name);
-      for (const k of Object.keys(value)) {
-        if (typeof value[k] === "function") {
-          existing[k] = value[k];
-        } else if (!(k in existing)) {
-          existing[k] = value[k];
-        }
+    const existing = bucket.get(name);
+    if (existing) {
+      const incoming = typeof value === "function" ? value() : value;
+      for (const k of Object.keys(incoming)) {
+        if (typeof incoming[k] === "function")
+          existing[k] = incoming[k];
+        else if (!(k in existing))
+          existing[k] = incoming[k];
       }
       root[name] = existing;
-      if (typeof existing.init === "function") {}
       return existing;
     }
     const data = typeof value === "function" ? value() : value;
     const proxy = reactive(data && typeof data === "object" ? data : { value: data });
     bucket.set(name, proxy);
     root[name] = proxy;
-    if (typeof proxy.init === "function") {
+    if (typeof proxy.init === "function")
       queueMicrotask(() => proxy.init());
-    }
     return proxy;
   },
   start(root = document) {
-    if (typeof document !== "undefined" && !document.getElementById("m-cloak-style")) {
-      const s = document.createElement("style");
-      s.id = "m-cloak-style";
-      s.textContent = "[x-cloak],[m-cloak]{display:none !important;}";
-      document.head.appendChild(s);
-    }
-    initTree(root === document ? document.body : root);
+    installCloakStyle();
+    return initTree(root === document ? document.body : root);
   },
   initTree,
   destroyTree,
@@ -1577,14 +2245,11 @@ var M = {
   mount(el, factory) {
     rootEl = typeof el === "string" ? document.querySelector(el) : el || document.body;
     rootFactory = factory != null ? typeof factory === "function" ? factory : () => factory : () => Router.render();
-    if (!document.getElementById("m-cloak-style")) {
-      const s = document.createElement("style");
-      s.id = "m-cloak-style";
-      s.textContent = "[x-cloak],[m-cloak]{display:none !important;}";
-      document.head.appendChild(s);
-    }
+    installCloakStyle();
     Router.onChange(() => {
       clearInstances();
+      rootInstance = null;
+      rootCtx = null;
       M.deferredBatchRedraw();
     });
     Router.start();
@@ -1592,68 +2257,43 @@ var M = {
     return rootInstance;
   },
   unmount() {
-    if (rootEl) {
-      destroyTree(rootEl);
-      rootEl.replaceChildren();
+    if (rootEl && oldRoot)
+      FragmentVNode._delete(oldRoot, rootEl);
+    for (const mount of [...mounts]) {
+      if (mount.old)
+        FragmentVNode._delete(mount.old, mount.parent);
     }
+    mounts.clear();
     clearInstances();
+    oldRoot = null;
     rootEl = null;
     rootFactory = null;
+    rootInstance = null;
+    rootCtx = null;
     Router.stop();
   },
   redraw() {
-    if (alreadyRedrawing)
+    refreshRequestCount++;
+    if (alreadyRedrawing) {
+      deferredBatchRedraw = true;
       return;
+    }
     alreadyRedrawing = true;
     try {
-      redrawCount++;
-      flushCount++;
-      if (!rootEl || !rootFactory)
-        return;
-      const active = document.activeElement;
-      const hadFocus = active && rootEl.contains(active) ? {
-        name: active.name,
-        id: active.id,
-        start: active.selectionStart,
-        end: active.selectionEnd
-      } : null;
-      if (!rootInstance) {
-        rootInstance = instantiate(rootFactory());
-        instanceCache.set("root", rootInstance);
-      }
-      destroyTree(rootEl);
-      rootEl.innerHTML = rootInstance.template || "";
-      elementData.set(rootEl, rootInstance);
-      for (const child of [...rootEl.children]) {
-        initTree(child, rootInstance);
-      }
-      if (typeof rootInstance.init === "function" && !rootInstance._inited) {
-        rootInstance._inited = true;
-        queueMicrotask(() => {
-          try {
-            rootInstance.init();
-          } catch (e) {
-            console.error(e);
-          }
-        });
-      }
-      if (hadFocus) {
-        const next = hadFocus.id ? rootEl.querySelector(`#${CSS.escape(hadFocus.id)}`) : hadFocus.name ? rootEl.querySelector(`[name="${hadFocus.name}"]`) : null;
-        if (next && next.focus) {
-          next.focus();
-          if (hadFocus.start != null && "setSelectionRange" in next) {
-            try {
-              next.setSelectionRange(hadFocus.start, hadFocus.end);
-            } catch (_) {}
-          }
-        }
-      }
-      renderCount++;
+      performRedraw();
     } finally {
       alreadyRedrawing = false;
     }
+    if (deferredBatchRedraw) {
+      deferredBatchRedraw = false;
+      M.redraw();
+    }
   },
   deferredBatchRedraw() {
+    if (alreadyRedrawing) {
+      deferredBatchRedraw = true;
+      return;
+    }
     if (deferredQueued)
       return;
     deferredQueued = true;
@@ -1664,12 +2304,18 @@ var M = {
   },
   invalidate() {
     clearInstances();
+    rootInstance = null;
+    rootCtx = null;
+    oldRoot = null;
   },
   get renderCount() {
     return renderCount;
   },
+  get refreshCount() {
+    return refreshRequestCount;
+  },
   get drawCallCount() {
-    return flushCount;
+    return takePerfStats().flushes;
   },
   takeDrawCalls,
   takePerfStats,
@@ -1679,8 +2325,28 @@ var M = {
   },
   link: Router.link,
   evaluate,
-  magic: {}
+  evaluateAction,
+  magic: {},
+  Component,
+  ComponentVNode,
+  parseTemplate,
+  buildTemplate,
+  updateNodes
 };
+function installCloakStyle() {
+  if (typeof document === "undefined")
+    return;
+  if (document.getElementById("m-cloak-style"))
+    return;
+  const s = document.createElement("style");
+  s.id = "m-cloak-style";
+  s.textContent = "[x-cloak],[m-cloak]{display:none !important;}";
+  document.head.appendChild(s);
+}
+onInvalidate(() => {
+  if (rootEl || mounts.size)
+    M.deferredBatchRedraw();
+});
 var m_default = M;
 if (typeof window !== "undefined") {
   window.M = M;

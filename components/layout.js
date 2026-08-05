@@ -24,7 +24,7 @@ export default function Layout(attrs = {}) {
               </div>
               <div>
                 <a :href="homeHref" class="font-semibold text-lg tracking-tight text-white hover:text-cyan-300 transition" @click="go">m.js</a>
-                <div class="text-xs text-cyan-400/70 font-mono">v3.0.0</div>
+                <div class="text-xs text-cyan-400/70 font-mono">v3.1.0</div>
               </div>
             </header>
 

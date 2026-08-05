@@ -44,7 +44,7 @@ async function boot(bust = 0) {
   if (!window.__M_APP_MOUNTED__) {
     window.__M_APP_MOUNTED__ = true;
     M.mount('#app');
-    console.info('[docs] m.js v3.0.0 mounted', M.version, 'base=', Router.base || '(root)');
+    console.info('[docs] m.js v3.1.0 mounted', M.version, 'base=', Router.base || '(root)');
   } else {
     M.invalidate();
     Router.detectBase();

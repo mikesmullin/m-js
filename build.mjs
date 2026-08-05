@@ -113,12 +113,31 @@ function fmtSize(n) {
  *   dist/m.min.js      — minified
  *   dist/m.min.js.gz   — minified + gzip
  */
+/**
+ * Keep the VERSION constant in src/m.js in step with package.json, so
+ * M.version never drifts from the published build.
+ */
+async function syncSourceVersion(version) {
+  const path = join(ROOT, 'src', 'm.js');
+  const src = await readFile(path, 'utf8');
+  const next = src.replace(
+    /^const VERSION = '[^']*';$/m,
+    `const VERSION = '${version}';`,
+  );
+  if (!/^const VERSION = '/m.test(src)) die('src/m.js: VERSION constant not found');
+  if (next !== src) {
+    await writeFile(path, next, 'utf8');
+    log(`synced src/m.js VERSION → ${version}`);
+  }
+}
+
 async function cmdPackage() {
   const pkg = await readPkg();
   const version = pkg.version;
   const head = banner(version);
 
   log(`packaging m.js v${version}`);
+  await syncSourceVersion(version);
   await rm(DIST, { recursive: true, force: true });
   await mkdir(DIST, { recursive: true });
 

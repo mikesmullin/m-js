@@ -1,1641 +1,80 @@
 /**
- * m.js v3 — Alpine-compatible UI runtime.
+ * m.js v3 — Alpine-compatible UI runtime on a v2 virtual DOM.
  *
- * Supports Alpine.js directives (x-*), magics ($*), and methods:
- *   x-data, x-bind, x-on, x-text, x-html, x-model, x-show, x-transition,
- *   x-for, x-if, x-init, x-effect, x-ref, x-cloak, x-ignore
- *   $store, $el, $dispatch, $watch, $refs, $nextTick
- *   M.data / M.store
+ * Templates are HTML strings carrying Alpine directives (x-*, @, :). They are
+ * parsed once into a static AST; every redraw evaluates that AST against the
+ * current scope to produce VNodes, and the diff applies the minimum set of
+ * DOM operations. Redrawing with unchanged state is a no-op.
  *
- * Shorthands: @click → x-on:click,  :class → x-bind:class
- * m-* aliases still work for compatibility.
- *
- * Plus m.js extras: Router, redraw/deferredBatchRedraw, HMR-safe stores.
+ * Directives: x-data, x-bind, x-on, x-text, x-html, x-model, x-show,
+ *   x-transition (x-show only), x-for, x-if, x-init, x-effect, x-ref,
+ *   x-cloak, x-ignore, x-mount
+ * Magics: $store, $el, $dispatch, $watch, $refs, $nextTick
+ * Shorthands: @click → x-on:click, :class → x-bind:class; m-* aliases work.
  */
 
 import { Router } from './router.js';
 import { createStore as createZustandStore } from './store.js';
+import {
+  Component,
+  ComponentVNode,
+  FragmentVNode,
+  delayedLifecycleEvents,
+  longestIncreasingSubsequence,
+  setDebug as setVdomDebug,
+  updateNodes,
+} from './vdom.js';
+import { parseElement, parseTemplate } from './parse.js';
+import { buildFragment, buildTemplate } from './build.js';
+import {
+  dataRegistry,
+  evaluate,
+  evaluateAction,
+  getStoresRoot,
+  setDebug as setScopeDebug,
+  storeBucket,
+} from './scope.js';
+import {
+  bumpRedrawCount,
+  effect,
+  flushSync,
+  onInvalidate,
+  reactive,
+  scheduleFrame,
+  takeDrawCalls,
+  takePerfStats,
+} from './reactive.js';
 
-const VERSION = '3.0.0';
-const DEBUG = false;
+const VERSION = '3.1.0';
 
-// ---------------------------------------------------------------------------
-// Reactive engine (effect-based, Alpine-like)
-// ---------------------------------------------------------------------------
-
-const REACTIVE = Symbol('m.reactive');
-const RAW = Symbol('m.raw');
-
-/** raw object → proxy (so we never double-wrap) */
-const proxyMap = new WeakMap();
-/** raw object → cached bound methods */
-const boundMethodCache = new WeakMap();
-
-/** @type {Function | null} */
-let activeEffect = null;
-/** @type {WeakMap<object, Map<string|symbol, Set<Function>>>} */
-const deps = new WeakMap();
-
-function track(target, key) {
-  if (!activeEffect) return;
-  // Never track internal symbols
-  if (key === REACTIVE || key === RAW) return;
-  let byKey = deps.get(target);
-  if (!byKey) {
-    byKey = new Map();
-    deps.set(target, byKey);
-  }
-  let set = byKey.get(key);
-  if (!set) {
-    set = new Set();
-    byKey.set(key, set);
-  }
-  set.add(activeEffect);
-  activeEffect._deps?.add(set);
-}
-
-function trigger(target, key) {
-  const byKey = deps.get(target);
-  if (!byKey) return;
-  const effects = new Set();
-  const exact = byKey.get(key);
-  if (exact) for (const e of exact) effects.add(e);
-  // Array mutation: length changes should refresh length subscribers only.
-  // Do NOT fan-out every string key write to "iterate" subscribers — that
-  // caused a hot loop when evaluate() used Object.keys() on the proxy.
-  if (key === 'length') {
-    const iter = byKey.get(Symbol.iterator);
-    if (iter) for (const e of iter) effects.add(e);
-  }
-  for (const e of effects) scheduleEffect(e);
-}
-
-/** @type {Set<Function>} */
-const queued = new Set();
-/**
- * Mithril-style pending flag: at most one scheduled flush slot.
- * While true, further scheduleEffect() only enqueue — they do not arm another rAF.
- */
-let pending = false;
-/** Safety: max effect runs per flush cycle before we bail */
-const MAX_EFFECT_RUNS_PER_FLUSH = 1000;
-let runsThisFlush = 0;
-
-/**
- * Perf counters since last takePerfStats() / takeDrawCalls().
- *   flushes  — rAF-batched flushEffects() runs (≈ paints / frames; Mithril "redraws")
- *   effects  — individual binding re-runs inside those flushes (fine-grained work)
- *   redraws  — full M.redraw() tree rebuilds
- */
-let flushCount = 0;
-let effectCount = 0;
-let redrawCount = 0;
-
-/**
- * Schedule a callback on the next animation frame (Mithril uses rAF for m.redraw).
- * Falls back to queueMicrotask when rAF is unavailable (some test envs).
- * @param {FrameRequestCallback|(() => void)} cb
- */
-function scheduleFrame(cb) {
-  const raf =
-    (typeof requestAnimationFrame === 'function' && requestAnimationFrame) ||
-    (typeof globalThis !== 'undefined' &&
-      typeof globalThis.requestAnimationFrame === 'function' &&
-      globalThis.requestAnimationFrame) ||
-    null;
-  if (raf) return raf.call(globalThis, /** @type {FrameRequestCallback} */ (cb));
-  return queueMicrotask(/** @type {() => void} */ (cb));
-}
-
-/**
- * Snapshot + reset perf counters.
- * @returns {{ flushes: number, effects: number, redraws: number }}
- */
-export function takePerfStats() {
-  const s = {
-    flushes: flushCount,
-    effects: effectCount,
-    redraws: redrawCount,
-  };
-  flushCount = 0;
-  effectCount = 0;
-  redrawCount = 0;
-  return s;
-}
-
-/**
- * Primary HUD metric: rAF flushes since last sample (expect ≤1 per display frame).
- * @returns {number}
- */
-export function takeDrawCalls() {
-  return takePerfStats().flushes;
-}
-
-function scheduleEffect(e) {
-  queued.add(e);
-  if (pending) return;
-  pending = true;
-  scheduleFrame(runScheduledFlush);
-}
-
-/**
- * One rAF slot: drain all queued effects (including cascades), then clear pending.
- * Matches Mithril: many data writes → one scheduled redraw per frame.
- */
-function runScheduledFlush() {
-  runsThisFlush = 0;
-  try {
-    flushEffects();
-  } finally {
-    pending = false;
-    // Work queued in the gap after drain but before pending=false — re-arm once
-    if (queued.size > 0) {
-      pending = true;
-      scheduleFrame(runScheduledFlush);
-    }
-  }
-}
-
-function flushEffects() {
-  if (queued.size === 0) return;
-  flushCount++;
-  // Drain in waves so newly scheduled work in this frame still runs here
-  while (queued.size > 0) {
-    const list = [...queued];
-    queued.clear();
-    for (const e of list) {
-      if (++runsThisFlush > MAX_EFFECT_RUNS_PER_FLUSH) {
-        console.error(
-          '[m] effect run cap hit — possible infinite loop; stopping flush',
-        );
-        queued.clear();
-        return;
-      }
-      try {
-        effectCount++;
-        e();
-      } catch (err) {
-        console.error('[m] effect error', err);
-      }
-    }
-  }
-}
-
-/** Force an immediate flush (tests / sync paths). Still counts as one flush. */
-export function flushSync() {
-  if (queued.size === 0 && !pending) return;
-  // Cancel the notion of a pending frame — we drain now
-  pending = false;
-  runsThisFlush = 0;
-  flushEffects();
-  // If something re-queued during sync flush, arm a normal frame (not recursive sync)
-  if (queued.size > 0 && !pending) {
-    pending = true;
-    scheduleFrame(runScheduledFlush);
-  }
-}
-
-/**
- * Plain data that is safe to deep-proxy (POJOs + arrays).
- * Skip host objects (DOM, Date, Promise, …) so we never break identity.
- * Allows Object.create(parent) bags used as x-for child scopes (Alpine-style).
- * @param {any} v
- */
-function canReactive(v) {
-  if (v == null || typeof v !== 'object') return false;
-  if (v[REACTIVE]) return true;
-  if (proxyMap.has(v)) return true;
-  if (Array.isArray(v)) return true;
-  if (v instanceof Date || v instanceof RegExp || v instanceof Promise) {
-    return false;
-  }
-  if (typeof Node !== 'undefined' && v instanceof Node) return false;
-  // POJO, null-proto, or Object.create(parent) scope objects
-  const tag = Object.prototype.toString.call(v);
-  return tag === '[object Object]';
-}
-
-/**
- * Deep reactive proxy. Nested POJOs/arrays are wrapped on read/write so
- * mutations like `store.history.unshift(row)` or `msg.text += chunk`
- * re-run effects that touched those paths — no manual bump/timers.
- *
- * @param {object} target
- * @returns {any}
- */
-export function reactive(target) {
-  if (target == null || typeof target !== 'object') return target;
-  // Already a proxy?
-  if (target[REACTIVE]) return target;
-  // Already wrapped this raw object?
-  const existing = proxyMap.get(target);
-  if (existing) return existing;
-  if (!canReactive(target)) return target;
-
-  const proxy = new Proxy(target, {
-    get(obj, key, receiver) {
-      if (key === REACTIVE) return true;
-      if (key === RAW) return obj;
-      track(obj, key);
-      const val = Reflect.get(obj, key, receiver);
-      // Bind methods once and cache (avoid new function identity every get).
-      // Always bind to *this* reactive proxy — not `receiver`.
-      // x-for / nested scopes use Object.create(proxy); lookups then hit this
-      // trap with receiver === childScope. Binding to receiver would make
-      // `this.foo = …` write onto the per-item scope instead of the store.
-      if (
-        typeof val === 'function' &&
-        Object.prototype.hasOwnProperty.call(obj, key)
-      ) {
-        let cache = boundMethodCache.get(obj);
-        if (!cache) {
-          cache = new Map();
-          boundMethodCache.set(obj, cache);
-        }
-        if (!cache.has(key)) cache.set(key, val.bind(proxy));
-        return cache.get(key);
-      }
-      // Deep wrap nested data so array/object mutations notify subscribers.
-      if (canReactive(val)) return reactive(val);
-      return val;
-    },
-    set(obj, key, value, receiver) {
-      const prev = obj[key];
-      const prevLen = Array.isArray(obj) ? obj.length : null;
-      const next =
-        canReactive(value) && !value[REACTIVE] ? reactive(value) : value;
-      // Store the raw target when value is a proxy we created
-      const rawNext =
-        next && typeof next === 'object' && next[RAW] ? next[RAW] : next;
-      // Write against the raw target (not `receiver`). Using the proxy as
-      // receiver breaks Array.prototype mutators (push/splice/…) — length and
-      // index sets never land on the underlying array, so effects never re-run.
-      const ok = Reflect.set(obj, key, rawNext, obj);
-      // Invalidate bound method cache if a function slot changes
-      if (typeof value === 'function' || typeof prev === 'function') {
-        boundMethodCache.get(obj)?.delete(key);
-      }
-      if (!Object.is(prev, rawNext)) trigger(obj, key);
-      // Setting arr[i] on a JS Array auto-updates .length without a separate
-      // [[Set]] for "length". Notify length subscribers (push/unshift/…).
-      if (Array.isArray(obj) && prevLen !== null && obj.length !== prevLen) {
-        trigger(obj, 'length');
-      }
-      return ok;
-    },
-    deleteProperty(obj, key) {
-      const had = Object.prototype.hasOwnProperty.call(obj, key);
-      const ok = Reflect.deleteProperty(obj, key);
-      if (had) trigger(obj, key);
-      return ok;
-    },
-    // Intentionally do NOT track ownKeys — Object.keys() during evaluate
-    // used to subscribe every effect to every write. Fine-grained gets only.
-  });
-
-  proxyMap.set(target, proxy);
-  return proxy;
-}
-
-/**
- * Longest increasing subsequence (patience sorting), O(n log n).
- * Ported from gobbler-foundation2 M.mjs `_O_n_log_n_LIS`.
- * Used by keyed x-for to leave a maximal stable subsequence unmoved
- * while reordering the rest (VDOM-style list reconciliation).
- *
- * @param {number[]} a map oldIndex → newIndex (sparse ok)
- * @returns {Set<number>} new indices that should keep their DOM position
- */
-export function longestIncreasingSubsequence(a) {
-  /** @type {{ target: number, idx: number, leaf: any }[]} */
-  const dp = [];
-  /** @type {{ target: number, idx: number, leaf: any } | null} */
-  let deepest = null;
-  for (let i = 0, l = a.length; i < l; i++) {
-    if (a[i] == null || Number.isNaN(a[i])) continue;
-    if (deepest == null || (deepest.target ?? 0) < (a[i] ?? 0)) {
-      deepest = { target: a[i], idx: i, leaf: dp[dp.length - 1] };
-      dp.push(deepest);
-      continue;
-    }
-    let start = 0;
-    let end = dp.length - 1;
-    while (start < end) {
-      const mid = (start >>> 1) + (end >>> 1) + (start & end & 1);
-      if ((dp[mid].target ?? 0) < (a[i] ?? 0)) start = mid + 1;
-      else end = mid;
-    }
-    dp[start] = { target: a[i], idx: i, leaf: dp[start - 1] };
-    if (start === dp.length - 1) deepest = dp[start];
-  }
-  /** @type {Set<number>} */
-  const results = new Set();
-  let c = deepest;
-  while (c != null) {
-    results.add(a[c.idx]);
-    c = c.leaf;
-  }
-  return results;
-}
-
-/**
- * @param {Function} fn
- * @returns {Function} stop
- */
-export function effect(fn) {
-  /** @type {Set<Set<Function>>} */
-  const depSets = new Set();
-  let stopped = false;
-  const runner = () => {
-    if (stopped) return;
-    // cleanup old deps
-    for (const s of depSets) s.delete(runner);
-    depSets.clear();
-    runner._deps = depSets;
-    const prev = activeEffect;
-    activeEffect = runner;
-    try {
-      fn();
-    } finally {
-      activeEffect = prev;
-    }
-  };
-  runner();
-  return () => {
-    stopped = true;
-    for (const s of depSets) s.delete(runner);
-    depSets.clear();
-  };
-}
+export {
+  reactive,
+  effect,
+  flushSync,
+  takeDrawCalls,
+  takePerfStats,
+  longestIncreasingSubsequence,
+};
 
 // ---------------------------------------------------------------------------
-// Registries: data components + stores
+// Root state
 // ---------------------------------------------------------------------------
 
-/** @type {Map<string, Function>} */
-const dataRegistry = new Map();
-
-/** HMR-safe M.store bucket */
-const STORE_HMR = '__M_ALPINE_STORES__';
-/** Fallback when window is unavailable (tests / SSR) */
-const localStoreBucket = new Map();
-
-function storeBucket() {
-  if (typeof window === 'undefined') return localStoreBucket;
-  if (!window[STORE_HMR]) window[STORE_HMR] = new Map();
-  return window[STORE_HMR];
-}
-
-/** @type {Record<string, any>} */
-let storesRoot = null;
-
-function getStoresRoot() {
-  if (!storesRoot) {
-    // rebuild from HMR bucket
-    const raw = {};
-    for (const [k, v] of storeBucket()) raw[k] = v;
-    storesRoot = reactive(raw);
-  }
-  return storesRoot;
-}
-
-// ---------------------------------------------------------------------------
-// Magics
-// ---------------------------------------------------------------------------
-
-/**
- * @param {Element} el
- * @param {object} data
- */
-function buildMagics(el, data) {
-  const magics = {
-    get $el() {
-      return el;
-    },
-    get $refs() {
-      return collectRefs(closestRoot(el) || el);
-    },
-    get $store() {
-      return getStoresRoot();
-    },
-    $dispatch(name, detail) {
-      el.dispatchEvent(
-        new CustomEvent(name, { detail, bubbles: true, composed: true }),
-      );
-    },
-    $watch(property, callback) {
-      let prev = evaluate(property, data, el);
-      return effect(() => {
-        const next = evaluate(property, data, el);
-        if (!Object.is(prev, next)) {
-          const old = prev;
-          prev = next;
-          callback(next, old);
-        }
-      });
-    },
-    $nextTick(fn) {
-      return new Promise((resolve) => {
-        queueMicrotask(() => {
-          fn?.();
-          resolve();
-        });
-      });
-    },
-  };
-  return magics;
-}
-
-/**
- * @param {Element} root
- */
-function collectRefs(root) {
-  /** @type {Record<string, Element>} */
-  const refs = {};
-  walk(root, (el) => {
-    const name =
-      el.getAttribute?.('x-ref') ||
-      el.getAttribute?.('m-ref');
-    if (name) refs[name] = el;
-  });
-  return refs;
-}
-
-// ---------------------------------------------------------------------------
-// Evaluate expressions in component scope + magics
-// ---------------------------------------------------------------------------
-
-/**
- * Evaluate an expression against scope + Alpine magics.
- *
- * IMPORTANT: only property *gets* through the reactive proxy are tracked.
- * We must NOT Object.keys() the proxy (that used to subscribe every effect
- * to every subsequent write → infinite flush loop).
- *
- * @param {string} expr
- * @param {object} scope
- * @param {Element} [el]
- * @param {any} [$event]
- */
-function evaluate(expr, scope, el, $event) {
-  if (expr == null || expr === '') return undefined;
-  try {
-    const magics = el ? buildMagics(el, scope) : {};
-    // $event as a plain own prop on magics bag
-    if ($event !== undefined) magics.$event = $event;
-
-    // Nested `with`: magics first (outer), then data scope (inner wins on clash).
-    // Accessing `count` hits the reactive proxy get trap → fine-grained track.
-    // eslint-disable-next-line no-new-func
-    const fn = new Function(
-      '$scope',
-      '$magics',
-      `with ($magics) { with ($scope) { return (${expr}); } }`,
-    );
-    return fn(scope ?? {}, magics);
-  } catch (err) {
-    if (DEBUG) console.warn('[m] eval:', expr, err);
-    return undefined;
-  }
-}
-
-/**
- * Run statement(s) for events / x-init (not just expressions).
- */
-function evaluateAction(expr, scope, el, $event) {
-  if (!expr) return;
-  try {
-    const magics = el ? buildMagics(el, scope) : {};
-    if ($event !== undefined) magics.$event = $event;
-    // eslint-disable-next-line no-new-func
-    const fn = new Function(
-      '$scope',
-      '$magics',
-      `with ($magics) { with ($scope) { ${expr} } }`,
-    );
-    fn(scope ?? {}, magics);
-  } catch (err) {
-    // Fallback: expression form
-    try {
-      evaluate(expr, scope, el, $event);
-    } catch (err2) {
-      if (DEBUG) console.warn('[m] action:', expr, err2);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DOM walk helpers
-// ---------------------------------------------------------------------------
-
-/**
- * @param {Element|Node} el
- * @param {(el: Element) => void | false} cb  return false to skip children
- */
-function walk(el, cb) {
-  if (el.nodeType !== 1) return;
-  const skip = cb(/** @type {Element} */ (el));
-  if (skip === false) return;
-  for (const child of [...el.children]) walk(child, cb);
-}
-
-/** @type {WeakMap<Element, object>} */
-const elementData = new WeakMap();
-/** @type {WeakMap<Element, Function[]>} */
-const elementCleanups = new WeakMap();
-
-function addCleanup(el, fn) {
-  let list = elementCleanups.get(el);
-  if (!list) {
-    list = [];
-    elementCleanups.set(el, list);
-  }
-  list.push(fn);
-}
-
-function cleanupEl(el) {
-  walk(el, (node) => {
-    const list = elementCleanups.get(node);
-    if (list) {
-      for (const fn of list) {
-        try {
-          fn();
-        } catch (_) {}
-      }
-      elementCleanups.delete(node);
-    }
-    elementData.delete(node);
-  });
-}
-
-function closestData(el) {
-  let cur = el;
-  while (cur) {
-    if (elementData.has(cur)) return elementData.get(cur);
-    cur = cur.parentElement;
-  }
-  return null;
-}
-
-function closestRoot(el) {
-  let cur = el;
-  let root = el;
-  while (cur) {
-    if (elementData.has(cur)) root = cur;
-    if (
-      cur.hasAttribute?.('x-data') ||
-      cur.hasAttribute?.('m-data')
-    )
-      root = cur;
-    cur = cur.parentElement;
-  }
-  return root;
-}
-
-// ---------------------------------------------------------------------------
-// Directive utils
-// ---------------------------------------------------------------------------
-
-const DIR_ORDER = [
-  'ignore',
-  'ref',
-  'data',
-  'init',
-  'for',
-  'if',
-  'model',
-  'bind',
-  'text',
-  'html',
-  'show',
-  'transition',
-  'on',
-  'effect',
-  'cloak',
-];
-
-function isDir(name) {
-  return (
-    name.startsWith('x-') ||
-    name.startsWith('m-') ||
-    name.startsWith('@') ||
-    (name.startsWith(':') && name.length > 1)
-  );
-}
-
-/**
- * Normalize attribute name → { type, arg, modifiers }
- * e.g. x-on:click.prevent → { type:'on', arg:'click', modifiers:['prevent'] }
- */
-function parseDirective(attrName) {
-  let name = attrName;
-  if (name.startsWith('@')) {
-    return {
-      type: 'on',
-      arg: name.slice(1).split('.')[0],
-      modifiers: name.slice(1).split('.').slice(1),
-      raw: attrName,
-    };
-  }
-  if (name.startsWith(':') && !name.startsWith('::')) {
-    return {
-      type: 'bind',
-      arg: name.slice(1).split('.')[0],
-      modifiers: name.slice(1).split('.').slice(1),
-      raw: attrName,
-    };
-  }
-  // strip x- or m-
-  if (name.startsWith('x-') || name.startsWith('m-')) name = name.slice(2);
-  const [head, ...rest] = name.split(':');
-  const type = head.split('.')[0];
-  const typeMods = head.split('.').slice(1);
-  const argPart = rest.join(':');
-  const arg = argPart ? argPart.split('.')[0] : null;
-  const argMods = argPart ? argPart.split('.').slice(1) : [];
-  return {
-    type,
-    arg,
-    modifiers: [...typeMods, ...argMods],
-    raw: attrName,
-  };
-}
-
-function dirPriority(type) {
-  const i = DIR_ORDER.indexOf(type);
-  return i === -1 ? 100 : i;
-}
-
-// ---------------------------------------------------------------------------
-// Apply bindings
-// ---------------------------------------------------------------------------
-
-// Alpine-style undo registries: each re-bind removes what the previous run
-// added, so static HTML classes/styles are never frozen into a "static"
-// snapshot (the old data-static-class approach broke when :style registered
-// after :class had already painted dynamic tokens like `collapsed`).
-/** @type {WeakMap<Element, () => void>} */
-const boundClassUndo = new WeakMap();
-/** @type {WeakMap<Element, () => void>} */
-const boundStyleUndo = new WeakMap();
-
-function splitClassTokens(s) {
-  return String(s || '')
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-/**
- * Alpine setClassesFromString: only add tokens not already on the element;
- * return an undo that removes exactly those added tokens.
- * @param {Element} el
- * @param {string} classString
- * @returns {() => void}
- */
-function setClassesFromString(el, classString) {
-  // Allow short-circuit forms like Alpine: true → ''
-  if (classString === true) classString = '';
-  const want = splitClassTokens(classString || '');
-  // Prefer className string math over classList: some happy-dom versions
-  // silently no-op classList.add while an attribute-bind effect is live.
-  const beforeTokens = splitClassTokens(el.getAttribute('class') || el.className || '');
-  const beforeSet = new Set(beforeTokens);
-  const toAdd = want.filter((t) => !beforeSet.has(t));
-  if (toAdd.length) {
-    const next = [...beforeTokens, ...toAdd].join(' ');
-    el.setAttribute('class', next);
-    if (globalThis.__m_debug_class) {
-      console.log('[setClassesFromString]', {
-        classString,
-        beforeTokens,
-        toAdd,
-        next,
-        afterAttr: el.getAttribute('class'),
-        afterClassName: el.className,
-      });
-    }
-  }
-  return () => {
-    if (!toAdd.length) return;
-    const drop = new Set(toAdd);
-    const cur = splitClassTokens(el.getAttribute('class') || el.className || '');
-    el.setAttribute('class', cur.filter((t) => !drop.has(t)).join(' '));
-  };
-}
-
-/**
- * Alpine setClassesFromObject: add tokens for truthy keys, remove for falsy;
- * undo restores the prior presence of those tokens.
- * @param {Element} el
- * @param {Record<string, any>} classObject
- * @returns {() => void}
- */
-function setClassesFromObject(el, classObject) {
-  const forAdd = Object.entries(classObject)
-    .flatMap(([classString, on]) => (on ? splitClassTokens(classString) : []))
-    .filter(Boolean);
-  const forRemove = Object.entries(classObject)
-    .flatMap(([classString, on]) => (!on ? splitClassTokens(classString) : []))
-    .filter(Boolean);
-
-  const tokens = splitClassTokens(el.getAttribute('class') || el.className || '');
-  const set = new Set(tokens);
-  /** @type {string[]} */
-  const added = [];
-  /** @type {string[]} */
-  const removed = [];
-
-  for (const t of forRemove) {
-    if (set.has(t)) {
-      set.delete(t);
-      removed.push(t);
-    }
-  }
-  for (const t of forAdd) {
-    if (!set.has(t)) {
-      set.add(t);
-      added.push(t);
-    }
-  }
-  el.setAttribute('class', [...set].join(' '));
-
-  return () => {
-    const cur = new Set(splitClassTokens(el.getAttribute('class') || el.className || ''));
-    for (const t of removed) cur.add(t);
-    for (const t of added) cur.delete(t);
-    el.setAttribute('class', [...cur].join(' '));
-  };
-}
-
-/**
- * @param {Element} el
- * @param {any} result
- */
-function applyClassBinding(el, result) {
-  const prev = boundClassUndo.get(el);
-  if (prev) prev();
-
-  let undo = () => {};
-  if (typeof result === 'function') {
-    // Alpine allows :class="() => …" — evaluate once per bind tick
-    applyClassBinding(el, result());
-    return;
-  }
-  if (typeof result === 'object' && result && !Array.isArray(result)) {
-    undo = setClassesFromObject(el, result);
-  } else if (Array.isArray(result)) {
-    undo = setClassesFromString(el, result.filter(Boolean).join(' '));
-  } else if (result != null && result !== false && result !== '') {
-    undo = setClassesFromString(el, String(result));
-  }
-  // false / null / undefined / '' → undo only (drop previously bound tokens)
-  boundClassUndo.set(el, undo);
-}
-
-function kebabCaseStyle(key) {
-  if (key.startsWith('--')) return key; // CSS custom properties stay as-is
-  return String(key).replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-}
-
-/**
- * Alpine setStylesFromObject: setProperty each key; undo restores prior values.
- * @param {HTMLElement} el
- * @param {Record<string, any>} value
- * @returns {() => void}
- */
-function setStylesFromObject(el, value) {
-  /** @type {Record<string, string>} */
-  const previous = {};
-  for (const [rawKey, rawVal] of Object.entries(value || {})) {
-    const key = kebabCaseStyle(rawKey);
-    previous[key] = el.style.getPropertyValue(key);
-    if (rawVal == null || rawVal === false || rawVal === '') {
-      el.style.removeProperty(key);
-    } else {
-      el.style.setProperty(key, String(rawVal));
-    }
-  }
-  return () => {
-    for (const [key, prev] of Object.entries(previous)) {
-      if (prev) el.style.setProperty(key, prev);
-      else el.style.removeProperty(key);
-    }
-  };
-}
-
-/**
- * @param {HTMLElement} el
- * @param {any} result
- */
-function applyStyleBinding(el, result) {
-  const prev = boundStyleUndo.get(el);
-  if (prev) prev();
-
-  let undo = () => {};
-  if (typeof result === 'object' && result) {
-    undo = setStylesFromObject(el, result);
-  } else if (result != null && result !== false) {
-    const cache = el.getAttribute('style');
-    el.setAttribute('style', String(result));
-    undo = () => {
-      if (cache == null || cache === '') el.removeAttribute('style');
-      else el.setAttribute('style', cache);
-    };
-  }
-  boundStyleUndo.set(el, undo);
-}
-
-function applyBinding(el, prop, result) {
-  if (prop === 'class' || prop === 'className') {
-    applyClassBinding(el, result);
-  } else if (prop === 'style') {
-    applyStyleBinding(/** @type {HTMLElement} */ (el), result);
-  } else if (
-    prop === 'disabled' ||
-    prop === 'checked' ||
-    prop === 'readonly' ||
-    prop === 'required' ||
-    prop === 'multiple' ||
-    prop === 'selected'
-  ) {
-    /** @type {any} */ (el)[prop] = !!result;
-    if (!result) el.removeAttribute(prop);
-    else el.setAttribute(prop, '');
-  } else if (prop === 'value') {
-    if (el.tagName === 'OPTION') {
-      // <option>: always reflect to the attribute. The .value property falls
-      // back to the option's TEXT when the attribute is absent — so an
-      // empty-string binding on a not-yet-texted option reads as a no-op,
-      // never sets the attribute, and the value then silently tracks later
-      // x-text updates.
-      if (el.getAttribute('value') !== String(result ?? '')) {
-        el.setAttribute('value', String(result ?? ''));
-      }
-    } else if (/** @type {any} */ (el).value !== String(result ?? '')) {
-      /** @type {any} */ (el).value = result ?? '';
-    }
-  } else if (result == null || result === false) {
-    el.removeAttribute(prop);
-  } else {
-    el.setAttribute(prop, result === true ? '' : String(result));
-  }
-}
-
-function stringify(v) {
-  if (v == null || v === false) return '';
-  return String(v);
-}
-
-// ---------------------------------------------------------------------------
-// Process a single element (directives)
-// ---------------------------------------------------------------------------
-
-/**
- * @param {Element} el
- * @param {object} [parentScope]
- * @returns {boolean} continue into children?
- */
-function processElement(el, parentScope) {
-  // x-ignore
-  if (el.hasAttribute('x-ignore') || el.hasAttribute('m-ignore')) {
-    return false;
-  }
-
-  // Collect directives
-  const dirs = [];
-  for (const attr of [...el.attributes]) {
-    if (!isDir(attr.name)) continue;
-    const parsed = parseDirective(attr.name);
-    dirs.push({ ...parsed, expression: attr.value, attrName: attr.name });
-  }
-  dirs.sort((a, b) => dirPriority(a.type) - dirPriority(b.type));
-
-  let scope = parentScope || closestData(el) || {};
-  let skipChildren = false;
-
-  for (const dir of dirs) {
-    const { type, arg, modifiers, expression, attrName } = dir;
-
-    // Remove directive attrs from DOM (cleaner inspect) except cloak until done
-    if (type !== 'cloak' && type !== 'data') {
-      // keep x-data for debugging optional — remove others
-      if (type !== 'ref') el.removeAttribute(attrName);
-    }
-
-    switch (type) {
-      case 'ignore':
-        return false;
-
-      case 'ref':
-        // handled via collectRefs; leave attr
-        break;
-
-      case 'data': {
-        scope = initData(el, expression, parentScope);
-        break;
-      }
-
-      case 'init': {
-        const stop = effect(() => {
-          // run once-ish: x-init typically once; we run when deps change too if referenced
-        });
-        stop(); // don't keep
-        queueMicrotask(() => evaluateAction(expression, scope, el));
-        addCleanup(el, () => {});
-        break;
-      }
-
-      case 'for': {
-        // Hand off to processFor (clones get full directive processing via initTree).
-        // Do not process remaining dirs on this node — it is removed from the DOM.
-        processFor(el, expression, scope);
-        return false;
-      }
-
-      case 'if': {
-        processIf(el, expression, scope);
-        return false;
-      }
-
-      case 'text': {
-        const stop = effect(() => {
-          el.textContent = stringify(evaluate(expression, scope, el));
-        });
-        addCleanup(el, stop);
-        break;
-      }
-
-      case 'html': {
-        const stop = effect(() => {
-          el.innerHTML = stringify(evaluate(expression, scope, el));
-        });
-        addCleanup(el, stop);
-        break;
-      }
-
-      case 'show': {
-        const transition = dirs.some((d) => d.type === 'transition');
-        const stop = effect(() => {
-          const show = !!evaluate(expression, scope, el);
-          applyShow(/** @type {HTMLElement} */ (el), show, transition);
-        });
-        addCleanup(el, stop);
-        break;
-      }
-
-      case 'transition':
-        // handled with x-show
-        el.removeAttribute(attrName);
-        break;
-
-      case 'model': {
-        processModel(el, expression, scope, modifiers);
-        break;
-      }
-
-      case 'bind': {
-        // Alpine: :class / :style are additive with undo — never snapshot the
-        // live class list into data-static-class (that froze dynamic tokens
-        // like `collapsed` whenever a sibling :style bind registered later).
-        const prop = arg || 'value';
-        if (prop === 'class' || prop === 'className') {
-          // happy-dom quirk: an element parsed with BOTH `class="…"` and
-          // `:class="…"` freezes subsequent class writes (setAttribute /
-          // classList.add only keep the original tokens). Re-creating the
-          // class attribute after removing the directive unsticks it.
-          // Harmless in real browsers.
-          const cur = el.getAttribute('class');
-          el.removeAttribute('class');
-          if (cur != null && cur !== '') el.setAttribute('class', cur);
-        }
-        const stop = effect(() => {
-          applyBinding(el, prop, evaluate(expression, scope, el));
-        });
-        addCleanup(el, () => {
-          stop();
-          if (prop === 'class' || prop === 'className') {
-            const u = boundClassUndo.get(el);
-            if (u) u();
-            boundClassUndo.delete(el);
-          } else if (prop === 'style') {
-            const u = boundStyleUndo.get(el);
-            if (u) u();
-            boundStyleUndo.delete(el);
-          }
-        });
-        break;
-      }
-
-      case 'on': {
-        processOn(el, arg || 'click', expression, scope, modifiers);
-        break;
-      }
-
-      case 'effect': {
-        const stop = effect(() => {
-          evaluateAction(expression, scope, el);
-        });
-        addCleanup(el, stop);
-        break;
-      }
-
-      case 'cloak':
-        el.removeAttribute(attrName);
-        el.removeAttribute('x-cloak');
-        el.removeAttribute('m-cloak');
-        break;
-
-      case 'mount': {
-        // m.js extension: nest a { template, ... } component from scope
-        // Reactive: re-mount when the bound value identity changes (e.g. init wireChildren)
-        let mounted = null;
-        const stop = effect(() => {
-          const child = evaluate(expression, scope, el);
-          if (!child) return;
-          if (mounted !== child) {
-            mounted = child;
-            mountComponent(el, child);
-          }
-        });
-        addCleanup(el, stop);
-        break;
-      }
-
-      default:
-        if (DEBUG) console.warn('[m] unknown directive', type);
-    }
-  }
-
-  return !skipChildren;
-}
-
-/**
- * @param {Element} el
- * @param {string} expression
- * @param {object} [parentScope]
- */
-function initData(el, expression, parentScope) {
-  let data;
-  const expr = expression.trim() === '' ? '{}' : expression.trim();
-
-  // Named component: x-data="dropdown" or x-data="dropdown(args)"
-  const named = expr.match(/^([A-Za-z_$][\w$]*)(\s*\(.*\))?$/);
-  if (named && dataRegistry.has(named[1])) {
-    const factory = dataRegistry.get(named[1]);
-    if (named[2]) {
-      // evaluate args with parent scope — named[2] is like "(a, b)"
-      const args =
-        evaluate(`([...${named[2]}])`, parentScope || {}, el) || [];
-      data = factory(...args);
-    } else {
-      data = factory();
-    }
-  } else {
-    data = evaluate(expr, parentScope || {}, el);
-  }
-
-  if (data == null || data === true) data = {};
-  if (typeof data !== 'object') data = { value: data };
-
-  // Inherit parent scope via prototype for nested x-data
-  // Use raw target if parent is a proxy so prototype walks work cleanly
-  if (parentScope) {
-    const parentRaw = parentScope[RAW] || parentScope;
-    Object.setPrototypeOf(data, parentRaw);
-  }
-
-  const proxy = reactive(data);
-  elementData.set(el, proxy);
-
-  // init() lifecycle if present
-  if (typeof proxy.init === 'function') {
-    queueMicrotask(() => {
-      try {
-        proxy.init();
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-
-  addCleanup(el, () => {
-    if (typeof proxy.destroy === 'function') {
-      try {
-        proxy.destroy();
-      } catch (_) {}
-    }
-  });
-
-  return proxy;
-}
-
-function applyShow(el, show, withTransition) {
-  if (withTransition) {
-    if (show) {
-      el.style.display = '';
-      el.style.opacity = '0';
-      el.offsetHeight; // reflow
-      el.style.transition = 'opacity 150ms ease';
-      el.style.opacity = '1';
-    } else {
-      el.style.transition = 'opacity 150ms ease';
-      el.style.opacity = '0';
-      const done = () => {
-        if (el.style.opacity === '0') el.style.display = 'none';
-        el.removeEventListener('transitionend', done);
-      };
-      el.addEventListener('transitionend', done);
-      setTimeout(done, 160);
-    }
-  } else {
-    el.style.display = show ? '' : 'none';
-  }
-}
-
-function processModel(el, expression, scope, modifiers) {
-  const tag = el.tagName;
-  const type = el.getAttribute('type');
-
-  const stop = effect(() => {
-    const val = evaluate(expression, scope, el);
-    if (tag === 'INPUT' && (type === 'checkbox' || type === 'radio')) {
-      /** @type {HTMLInputElement} */ (el).checked = !!val;
-    } else if (/** @type {any} */ (el).value !== stringify(val)) {
-      /** @type {any} */ (el).value = stringify(val);
-    }
-  });
-  addCleanup(el, stop);
-
-  const event =
-    modifiers.includes('lazy') || tag === 'SELECT' ? 'change' : 'input';
-
-  const handler = (e) => {
-    const t = /** @type {HTMLInputElement} */ (e.target);
-    let value;
-    if (t.type === 'checkbox') value = t.checked;
-    else if (t.type === 'number') value = t.value === '' ? null : Number(t.value);
-    else value = t.value;
-    if (modifiers.includes('number')) value = parseFloat(value);
-    assignPath(scope, expression, value);
-  };
-  el.addEventListener(event, handler);
-  addCleanup(el, () => el.removeEventListener(event, handler));
-}
-
-function assignPath(scope, path, value) {
-  const trimmed = path.trim();
-  // Alpine: x-model="$store.cart.qty"
-  if (trimmed.startsWith('$store.')) {
-    const parts = trimmed.slice(7).split('.');
-    let obj = getStoresRoot();
-    for (let i = 0; i < parts.length - 1; i++) {
-      obj = obj[parts[i]];
-      if (obj == null) return;
-    }
-    obj[parts[parts.length - 1]] = value;
-    return;
-  }
-  const parts = trimmed.split('.');
-  let obj = scope;
-  for (let i = 0; i < parts.length - 1; i++) {
-    obj = obj[parts[i]];
-    if (obj == null) return;
-  }
-  obj[parts[parts.length - 1]] = value;
-}
-
-/**
- * Walk scope chain for the outermost reactive proxy.
- * x-for row scopes are reactive locals with parent raw on the prototype;
- * method calls like remove(id) must use the *parent store* as `this`, not the row.
- * @param {object} scope
- */
-function findReactiveRoot(scope) {
-  let cur = scope;
-  /** @type {object | null} */
-  let best = null;
-  const seen = new Set();
-  while (cur && typeof cur === 'object' && !seen.has(cur)) {
-    seen.add(cur);
-    if (cur[REACTIVE]) {
-      best = cur;
-    } else {
-      const proxied = proxyMap.get(cur);
-      if (proxied) best = proxied;
-    }
-    const raw = cur[RAW] || cur;
-    cur = Object.getPrototypeOf(raw);
-  }
-  return best || scope;
-}
-
-function processOn(el, event, expression, scope, modifiers) {
-  let target = el;
-  let eventName = event;
-  if (modifiers.includes('window')) target = window;
-  if (modifiers.includes('document')) target = document;
-  if (modifiers.includes('outside')) {
-    // click outside
-    const handler = (e) => {
-      if (el.contains(/** @type {Node} */ (e.target))) return;
-      run();
-    };
-    const run = () => evaluateAction(expression, scope, el, null);
-    document.addEventListener('click', handler);
-    addCleanup(el, () => document.removeEventListener('click', handler));
-    return;
-  }
-
-  const handler = (e) => {
-    if (modifiers.includes('prevent')) e.preventDefault();
-    if (modifiers.includes('stop')) e.stopPropagation();
-    if (modifiers.includes('once')) {
-      target.removeEventListener(eventName, handler);
-    }
-    const expr = expression.trim();
-    const self = findReactiveRoot(scope);
-
-    // Bare method name: inc
-    if (/^[A-Za-z_$][\w$]*$/.test(expr)) {
-      const fn = evaluate(expr, scope, el);
-      if (typeof fn === 'function') {
-        fn.call(self, e);
-        return;
-      }
-    }
-
-    // Call expression: remove(item.id) — bare `with` call loses `this`.
-    const call = expr.match(/^([A-Za-z_$][\w$]*)\(([\s\S]*)\)\s*$/);
-    if (call) {
-      const fn = evaluate(call[1], scope, el);
-      if (typeof fn === 'function') {
-        const argsSrc = call[2].trim();
-        const args = argsSrc
-          ? evaluate(`[${argsSrc}]`, scope, el, e) || []
-          : [];
-        fn.apply(self, Array.isArray(args) ? args : []);
-        return;
-      }
-    }
-
-    evaluateAction(expr, scope, el, e);
-  };
-
-  const opts = {};
-  if (modifiers.includes('passive')) opts.passive = true;
-  if (modifiers.includes('capture')) opts.capture = true;
-
-  let finalHandler = handler;
-  if (modifiers.includes('debounce')) {
-    let t;
-    finalHandler = (e) => {
-      clearTimeout(t);
-      t = setTimeout(() => handler(e), 250);
-    };
-  }
-  if (modifiers.includes('throttle')) {
-    let locked = false;
-    finalHandler = (e) => {
-      if (locked) return;
-      locked = true;
-      handler(e);
-      setTimeout(() => {
-        locked = false;
-      }, 250);
-    };
-  }
-
-  target.addEventListener(eventName, finalHandler, opts);
-  addCleanup(el, () => target.removeEventListener(eventName, finalHandler, opts));
-}
-
-/**
- * x-for="item in items" — Alpine-style keyed reconciliation.
- *
- * Like alpinejs/src/directives/x-for.js:
- *  - Map key → rendered row (survive across list mutations)
- *  - refresh row scope in place (no full destroy when key matches)
- *  - delete keys that disappeared; create keys that appeared
- *  - reorder DOM with LIS (gobbler) so a maximal subsequence stays put
- *
- * Key expression: :key / x-bind:key / m-bind:key (default: index).
- * Prefer <template x-for>; bare elements are also supported.
- */
-function processFor(el, expression, scope) {
-  const match = expression.match(
-    /^\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*))?\s+in\s+(.+)$/,
-  );
-  if (!match) {
-    console.warn('[m] bad x-for', expression);
-    return;
-  }
-  const [, itemName, indexName, listExpr] = match;
-
-  // Alpine stores key on the for node as x-bind:key / :key before loop runs.
-  const keyExpr =
-    el.getAttribute(':key') ||
-    el.getAttribute('x-bind:key') ||
-    el.getAttribute('m-bind:key') ||
-    null;
-  if (keyExpr) {
-    el.removeAttribute(':key');
-    el.removeAttribute('x-bind:key');
-    el.removeAttribute('m-bind:key');
-  }
-
-  const isTemplate = el.tagName === 'TEMPLATE';
-  const anchor = document.createComment(`x-for: ${expression}`);
-  el.parentNode.insertBefore(anchor, el);
-  el.remove();
-
-  /**
-   * @typedef {{ nodes: Element[], scope: object }} ForRow
-   * @type {Map<any, ForRow>}
-   */
-  let lookup = new Map();
-
-  // Parent raw for prototype chain (method name lookup under `with`).
-  // Must NOT be the parent *proxy* as [[Prototype]] of a reactive row —
-  // that re-enters parent tracking from row effects (infinite flush).
-  const parentRaw = scope?.[RAW] || scope || {};
-
-  /**
-   * Alpine-style row scope: reactive locals so `_x_refreshXForScope`-equivalent
-   * (`scope.item = newItem`) re-runs x-text / binds that read `item.*`.
-   * Prototype = parent raw for reading parent fields/methods; `this` for calls
-   * is fixed in processOn via findReactiveRoot → proxyMap.
-   */
-  function makeRowScope(item, index) {
-    const locals = { [itemName]: item };
-    if (indexName) locals[indexName] = index;
-    else locals.$index = index;
-    Object.setPrototypeOf(locals, parentRaw);
-    return reactive(locals);
-  }
-
-  /**
-   * Alpine `el._x_refreshXForScope` — reactive sets on the row scope.
-   * @param {object} rowScope
-   * @param {any} item
-   * @param {any} index
-   */
-  function refreshRowScope(rowScope, item, index) {
-    rowScope[itemName] = item;
-    if (indexName) rowScope[indexName] = index;
-    else rowScope.$index = index;
-  }
-
-  const stop = effect(() => {
-    let list = evaluate(listExpr, scope, anchor.parentElement);
-    if (list == null) list = [];
-    // Alpine: `x-for="i in 100"`
-    if (typeof list === 'number' && Number.isFinite(list)) {
-      list = Array.from({ length: list }, (_, i) => i + 1);
-    }
-    if (list instanceof Set || list instanceof Map) {
-      list = Array.from(list);
-    }
-
-    const isArr = Array.isArray(list);
-    // Subscribe to length + indices so push/splice/replace re-run this effect
-    // without reassigning the array on the parent store (deep reactive).
-    /** @type {[any, any][]} */
-    let entries;
-    if (isArr) {
-      void list.length;
-      entries = list.map((item, i) => [i, item]);
-    } else if (list && typeof list === 'object') {
-      entries = Object.entries(list);
-    } else {
-      entries = [];
-    }
-
-    const oldLookup = lookup;
-    lookup = new Map();
-
-    /** @type {{ key: any, item: any, index: any }[]} */
-    const plan = [];
-    for (let i = 0; i < entries.length; i++) {
-      const index = isArr ? i : entries[i][0];
-      const item = entries[i][1];
-      let key;
-      if (keyExpr) {
-        const keyScope = makeRowScope(item, index);
-        key = evaluate(keyExpr, keyScope, anchor.parentElement);
-        if (key != null && typeof key === 'object') {
-          console.warn('[m] x-for :key must be string/number, got object');
-          key = String(i);
-        }
-      } else {
-        key = index;
-      }
-      if (oldLookup.has(key)) {
-        lookup.set(key, /** @type {ForRow} */ (oldLookup.get(key)));
-        oldLookup.delete(key);
-      }
-      plan.push({ key, item, index });
-    }
-
-    // Keys only in old → remove (Alpine: leftover oldLookup)
-    for (const rec of oldLookup.values()) {
-      for (const node of rec.nodes) {
-        cleanupEl(node);
-        node.remove();
-      }
-    }
-
-    // Optional LIS: old key order → new index map (gobbler VDOM). Rows in the
-    // longest increasing subsequence already sit in relative order and can skip
-    // a move when they are already `prev.nextSibling`.
-    processFor._lastKeys = processFor._lastKeys || new WeakMap();
-    const lastKeys = processFor._lastKeys.get(anchor) || [];
-    /** @type {Map<any, number>} */
-    const oldPos = new Map();
-    for (let i = 0; i < lastKeys.length; i++) oldPos.set(lastKeys[i], i);
-    /** @type {number[]} */
-    const moveMap = [];
-    for (let ni = 0; ni < plan.length; ni++) {
-      const k = plan[ni].key;
-      if (oldPos.has(k)) moveMap[/** @type {number} */ (oldPos.get(k))] = ni;
-    }
-    const stay = longestIncreasingSubsequence(moveMap);
-
-    /** @type {any[]} */
-    const newKeys = [];
-    let prev = /** @type {Node} */ (anchor);
-
-    for (let ni = 0; ni < plan.length; ni++) {
-      const { key, item, index } = plan[ni];
-      newKeys.push(key);
-
-      if (lookup.has(key)) {
-        const rec = /** @type {ForRow} */ (lookup.get(key));
-        // Alpine _x_refreshXForScope — reactive write so x-text="item.name" re-runs
-        refreshRowScope(rec.scope, item, index);
-
-        for (const node of rec.nodes) {
-          // Alpine: if (prev.nextElementSibling !== el) prev.after(el)
-          // LIS: skip move when this new-index is in the stable subsequence
-          // and the node is already in the correct spot after prev.
-          const inPlace = prev.nextSibling === node;
-          if (!(stay.has(ni) && inPlace) && !inPlace && prev.parentNode) {
-            prev.parentNode.insertBefore(node, prev.nextSibling);
-          }
-          prev = node;
-        }
-        continue;
-      }
-
-      // Create: reactive row scope (Alpine reactive(scope) + parent linkage)
-      const childScope = makeRowScope(item, index);
-
-      /** @type {Element[]} */
-      const nodes = [];
-      if (isTemplate) {
-        const frag = /** @type {HTMLTemplateElement} */ (
-          el
-        ).content.cloneNode(true);
-        const wrap = document.createElement('div');
-        wrap.appendChild(frag);
-        for (const kid of [...wrap.childNodes]) {
-          if (kid.nodeType === 1) {
-            prev.parentNode.insertBefore(kid, prev.nextSibling);
-            prev = kid;
-            initTree(/** @type {Element} */ (kid), childScope);
-            nodes.push(/** @type {Element} */ (kid));
-          } else {
-            prev.parentNode.insertBefore(kid, prev.nextSibling);
-            prev = kid;
-          }
-        }
-      } else {
-        const node = /** @type {Element} */ (el.cloneNode(true));
-        node.removeAttribute('x-for');
-        node.removeAttribute('m-for');
-        prev.parentNode.insertBefore(node, prev.nextSibling);
-        prev = node;
-        initTree(node, childScope);
-        nodes.push(node);
-      }
-      lookup.set(key, { nodes, scope: childScope });
-    }
-
-    processFor._lastKeys.set(anchor, newKeys);
-  });
-
-  addCleanup(anchor.parentElement || document.body, () => {
-    stop();
-    for (const rec of lookup.values()) {
-      for (const node of rec.nodes) {
-        cleanupEl(node);
-        node.remove();
-      }
-    }
-    lookup.clear();
-    processFor._lastKeys?.delete(anchor);
-  });
-}
-
-/** @type {WeakMap<Comment, any[]> | undefined} */
-processFor._lastKeys = undefined;
-
-function processIf(el, expression, scope) {
-  const isTemplate = el.tagName === 'TEMPLATE';
-  const anchor = document.createComment(`x-if: ${expression}`);
-  el.parentNode.insertBefore(anchor, el);
-  el.remove();
-
-  /** @type {Element[]} */
-  let nodes = [];
-
-  const stop = effect(() => {
-    const show = !!evaluate(expression, scope, anchor.parentElement);
-    for (const n of nodes) {
-      cleanupEl(n);
-      n.remove();
-    }
-    nodes = [];
-    if (!show) return;
-
-    if (isTemplate) {
-      const frag = /** @type {HTMLTemplateElement} */ (el).content.cloneNode(
-        true,
-      );
-      const wrap = document.createElement('div');
-      wrap.appendChild(frag);
-      let insertAfter = anchor;
-      for (const kid of [...wrap.childNodes]) {
-        insertAfter.parentNode.insertBefore(kid, insertAfter.nextSibling);
-        insertAfter = /** @type {any} */ (kid);
-        if (kid.nodeType === 1) {
-          initTree(/** @type {Element} */ (kid), scope);
-          nodes.push(/** @type {Element} */ (kid));
-        }
-      }
-    } else {
-      const node = /** @type {Element} */ (el.cloneNode(true));
-      node.removeAttribute('x-if');
-      node.removeAttribute('m-if');
-      anchor.parentNode.insertBefore(node, anchor.nextSibling);
-      initTree(node, scope);
-      nodes.push(node);
-    }
-  });
-
-  addCleanup(anchor.parentElement || document.body, stop);
-}
-
-// ---------------------------------------------------------------------------
-// initTree — M.start style
-// ---------------------------------------------------------------------------
-
-/**
- * @param {Element|Document} el
- * @param {object} [scope]
- */
-export function initTree(el, scope) {
-  const root = el === document ? document.body : /** @type {Element} */ (el);
-  walk(root, (node) => {
-    // If node has x-data, that becomes new scope
-    const parentScope =
-      scope || closestData(node.parentElement) || closestData(node) || {};
-    const cont = processElement(node, elementData.get(node) || parentScope);
-    // processElement may set elementData for x-data nodes
-    // If node had x-data, children should use that scope — walk continues
-    // with closestData finding it.
-    return cont;
-  });
-}
-
-/**
- * Destroy Alpine state under el.
- * @param {Element} el
- */
-export function destroyTree(el) {
-  cleanupEl(el);
-}
-
-// ---------------------------------------------------------------------------
-// Component mount (template string factories) — bridges Router pages
-// ---------------------------------------------------------------------------
-
-/** @type {HTMLElement | null} */
 let rootEl = null;
-/** @type {Function | null} */
 let rootFactory = null;
-/** @type {object | null} */
 let rootInstance = null;
-/** @type {Map<string, object>} */
-const instanceCache = new Map();
+let rootCtx = null;
+let oldRoot = null;
+
 let renderCount = 0;
+let refreshRequestCount = 0;
 let alreadyRedrawing = false;
+let deferredBatchRedraw = false;
 let deferredQueued = false;
 
-/**
- * Normalize factory → { template, ...data }
- * @param {object|Function} configOrFactory
- * @param {object} [attrs]
- */
+/** Extra mount points created by initTree() (progressive enhancement). */
+const mounts = new Set();
+
 function instantiate(configOrFactory, attrs = {}) {
   let config =
     typeof configOrFactory === 'function'
@@ -1650,46 +89,49 @@ function instantiate(configOrFactory, attrs = {}) {
   return reactive(config);
 }
 
-/**
- * Render a {template,...} component into el using x-* processing.
- * @param {Element} el
- * @param {object|Function} configOrFactory
- * @param {string} [cacheKey]
- */
-function mountComponent(el, configOrFactory, cacheKey) {
-  let instance =
-    cacheKey && instanceCache.has(cacheKey)
-      ? instanceCache.get(cacheKey)
-      : null;
-  const isNew = !instance;
-  if (!instance) {
-    instance = instantiate(configOrFactory);
-    if (cacheKey) instanceCache.set(cacheKey, instance);
-  }
-
-  // Tear down previous alpine tree in el
-  destroyTree(el);
-  el.innerHTML = instance.template || '';
-
-  // Root scope is the component instance — walk children with that scope.
-  // If template root has x-data, that takes over; otherwise bind instance as scope.
-  elementData.set(el, instance);
-  for (const child of [...el.children]) {
-    initTree(child, instance);
-  }
-  // Also process directives ON children that use parent scope (instance)
-
-  if (isNew && typeof instance.init === 'function') {
-    queueMicrotask(() => {
-      try {
-        instance.init();
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-  return instance;
+function renderRoot() {
+  if (!rootInstance) return null;
+  return buildTemplate(rootInstance.template || '', rootInstance, rootCtx);
 }
+
+function drainLifecycle() {
+  // Hooks never run inside the diff — a hook that redraws cannot re-enter a
+  // half-updated tree.
+  const hooks = delayedLifecycleEvents.splice(0, delayedLifecycleEvents.length);
+  for (const hook of hooks) {
+    try {
+      hook();
+    } catch (e) {
+      console.error('[m] lifecycle', e);
+    }
+  }
+}
+
+function performRedraw() {
+  bumpRedrawCount();
+  if (rootEl && rootFactory) {
+    if (!rootInstance) {
+      rootInstance = instantiate(rootFactory());
+      rootCtx = { refs: {}, getEl: () => rootEl };
+    }
+    const next = renderRoot();
+    updateNodes(rootEl, oldRoot, next, null);
+    oldRoot = next;
+  }
+  for (const mount of mounts) {
+    const next = buildFragment(mount.ast, mount.scope, mount.ctx);
+    updateNodes(mount.parent, mount.old, next, mount.nextSibling);
+    mount.old = next;
+  }
+  drainLifecycle();
+  renderCount++;
+}
+
+// ---------------------------------------------------------------------------
+// Component mount helper (x-mount / M.mount)
+// ---------------------------------------------------------------------------
+
+const instanceCache = new Map();
 
 function clearInstances() {
   for (const inst of instanceCache.values()) {
@@ -1700,76 +142,113 @@ function clearInstances() {
     }
   }
   instanceCache.clear();
-  rootInstance = null;
 }
 
 // ---------------------------------------------------------------------------
-// Public API (M.*)
+// Progressive enhancement: initTree over server-rendered DOM
+// ---------------------------------------------------------------------------
+
+/**
+ * Take over a live element: its markup is parsed into an AST, rebuilt as
+ * VNodes and swapped in. The returned element is the built one — the original
+ * node is replaced, not adopted.
+ */
+export function initTree(el, scope) {
+  const root = el === document ? document.body : el;
+  if (!root) return root;
+
+  if (root === document.body || root.tagName === 'BODY') {
+    // Enhance each child independently so <body> itself is left alone.
+    const out = [];
+    for (const child of [...root.children]) out.push(initTree(child, scope));
+    return out[0] ?? root;
+  }
+
+  const ast = [parseElement(root)].filter(Boolean);
+  const ctx = { refs: {}, getEl: () => null };
+  const mount = {
+    ast,
+    scope: scope ?? {},
+    ctx,
+    parent: root.parentNode,
+    nextSibling: root.nextSibling,
+    old: null,
+  };
+  if (!mount.parent) return root;
+  root.remove();
+
+  const next = buildFragment(ast, mount.scope, ctx);
+  updateNodes(mount.parent, null, next, mount.nextSibling);
+  mount.old = next;
+  mounts.add(mount);
+  drainLifecycle();
+
+  const first = next._siblings[next._keys[0]]?.vnode;
+  const dom = first?._getNextSibling()?.dom ?? null;
+  if (dom) mount.el = dom;
+  return dom ?? root;
+}
+
+/** Tear down a subtree mounted by initTree(). */
+export function destroyTree(el) {
+  for (const mount of [...mounts]) {
+    if (!mount.old) continue;
+    if (mount.el === el || (el && mount.el && el.contains(mount.el))) {
+      FragmentVNode._delete(mount.old, mount.parent);
+      mounts.delete(mount);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M
 // ---------------------------------------------------------------------------
 
 export const M = {
   version: VERSION,
-  reactive,
-  effect,
 
-  /**
-   * Register a reusable data component.
-   * M.data('dropdown', () => ({ open: false, toggle(){...} }))
-   */
+  set debug(on) {
+    setVdomDebug(on);
+    setScopeDebug(on);
+  },
+
+  /** Register a named x-data component factory. */
   data(name, factory) {
     dataRegistry.set(name, factory);
     return factory;
   },
 
-  /**
-   * Global reactive store.
-   * M.store('name', { ... }) or M.store('name') to read.
-   */
+  /** Define or read a global store. */
   store(name, value) {
     const bucket = storeBucket();
     const root = getStoresRoot();
-    if (value === undefined) {
-      return root[name];
-    }
-    // HMR: reuse existing reactive store object when re-registering
-    if (bucket.has(name) && typeof value === 'object' && value) {
-      const existing = bucket.get(name);
+    if (value === undefined) return root[name];
+
+    const existing = bucket.get(name);
+    if (existing) {
       // merge new methods onto existing state (keep data)
-      for (const k of Object.keys(value)) {
-        if (typeof value[k] === 'function') {
-          existing[k] = value[k];
-        } else if (!(k in existing)) {
-          existing[k] = value[k];
-        }
+      const incoming = typeof value === 'function' ? value() : value;
+      for (const k of Object.keys(incoming)) {
+        if (typeof incoming[k] === 'function') existing[k] = incoming[k];
+        else if (!(k in existing)) existing[k] = incoming[k];
       }
       root[name] = existing;
-      if (typeof existing.init === 'function') {
-        /* already inited */
-      }
       return existing;
     }
     const data = typeof value === 'function' ? value() : value;
-    const proxy = reactive(data && typeof data === 'object' ? data : { value: data });
+    const proxy = reactive(
+      data && typeof data === 'object' ? data : { value: data },
+    );
     bucket.set(name, proxy);
     root[name] = proxy;
-    if (typeof proxy.init === 'function') {
-      queueMicrotask(() => proxy.init());
-    }
+    if (typeof proxy.init === 'function') queueMicrotask(() => proxy.init());
     return proxy;
   },
 
-  /**
-   * Start M on the document (or under a root) — init all x-* trees.
-   */
+  /** Start M over existing markup (progressive enhancement). */
   start(root = document) {
-    // CSS for x-cloak
-    if (typeof document !== 'undefined' && !document.getElementById('m-cloak-style')) {
-      const s = document.createElement('style');
-      s.id = 'm-cloak-style';
-      s.textContent = '[x-cloak],[m-cloak]{display:none !important;}';
-      document.head.appendChild(s);
-    }
-    initTree(root === document ? document.body : root);
+    installCloakStyle();
+    return initTree(root === document ? document.body : root);
   },
 
   initTree,
@@ -1779,14 +258,9 @@ export const M = {
   Router,
   createStore: createZustandStore,
 
-  /**
-   * Mount a root component factory (Router-friendly).
-   * @param {HTMLElement|string|null} el
-   * @param {Function|object} [factory]
-   */
+  /** Mount a root component factory (Router-friendly). */
   mount(el, factory) {
-    rootEl =
-      typeof el === 'string' ? document.querySelector(el) : el || document.body;
+    rootEl = typeof el === 'string' ? document.querySelector(el) : el || document.body;
     rootFactory =
       factory != null
         ? typeof factory === 'function'
@@ -1794,16 +268,12 @@ export const M = {
           : () => factory
         : () => Router.render();
 
-    // cloak style
-    if (!document.getElementById('m-cloak-style')) {
-      const s = document.createElement('style');
-      s.id = 'm-cloak-style';
-      s.textContent = '[x-cloak],[m-cloak]{display:none !important;}';
-      document.head.appendChild(s);
-    }
+    installCloakStyle();
 
     Router.onChange(() => {
       clearInstances();
+      rootInstance = null;
+      rootCtx = null;
       M.deferredBatchRedraw();
     });
     Router.start();
@@ -1812,89 +282,51 @@ export const M = {
   },
 
   unmount() {
-    if (rootEl) {
-      destroyTree(rootEl);
-      rootEl.replaceChildren();
+    if (rootEl && oldRoot) FragmentVNode._delete(oldRoot, rootEl);
+    for (const mount of [...mounts]) {
+      if (mount.old) FragmentVNode._delete(mount.old, mount.parent);
     }
+    mounts.clear();
     clearInstances();
+    oldRoot = null;
     rootEl = null;
     rootFactory = null;
+    rootInstance = null;
+    rootCtx = null;
     Router.stop();
   },
 
+  /**
+   * Diff the current tree against the DOM. Re-entrancy collapses to a single
+   * follow-up pass; a redraw with unchanged state performs no DOM writes.
+   */
   redraw() {
-    if (alreadyRedrawing) return;
+    refreshRequestCount++;
+    if (alreadyRedrawing) {
+      deferredBatchRedraw = true;
+      return;
+    }
     alreadyRedrawing = true;
     try {
-      // Full tree rebuild — counts as one redraw (and one flush slot for HUD)
-      redrawCount++;
-      flushCount++;
-      if (!rootEl || !rootFactory) return;
-
-      const active = document.activeElement;
-      const hadFocus =
-        active && rootEl.contains(active)
-          ? {
-              name: /** @type {any} */ (active).name,
-              id: active.id,
-              start: /** @type {any} */ (active).selectionStart,
-              end: /** @type {any} */ (active).selectionEnd,
-            }
-          : null;
-
-      if (!rootInstance) {
-        rootInstance = instantiate(rootFactory());
-        instanceCache.set('root', rootInstance);
-      }
-
-      destroyTree(rootEl);
-      rootEl.innerHTML = rootInstance.template || '';
-      elementData.set(rootEl, rootInstance);
-      for (const child of [...rootEl.children]) {
-        initTree(child, rootInstance);
-      }
-
-      if (typeof rootInstance.init === 'function' && !rootInstance._inited) {
-        rootInstance._inited = true;
-        queueMicrotask(() => {
-          try {
-            rootInstance.init();
-          } catch (e) {
-            console.error(e);
-          }
-        });
-      }
-
-      if (hadFocus) {
-        const next = hadFocus.id
-          ? rootEl.querySelector(`#${CSS.escape(hadFocus.id)}`)
-          : hadFocus.name
-            ? rootEl.querySelector(`[name="${hadFocus.name}"]`)
-            : null;
-        if (next && /** @type {any} */ (next).focus) {
-          /** @type {HTMLElement} */ (next).focus();
-          if (
-            hadFocus.start != null &&
-            'setSelectionRange' in next
-          ) {
-            try {
-              /** @type {any} */ (next).setSelectionRange(
-                hadFocus.start,
-                hadFocus.end,
-              );
-            } catch (_) {}
-          }
-        }
-      }
-
-      renderCount++;
+      performRedraw();
     } finally {
       alreadyRedrawing = false;
     }
+    if (deferredBatchRedraw) {
+      deferredBatchRedraw = false;
+      M.redraw();
+    }
   },
 
+  /**
+   * Use from inside lifecycle callbacks. Re-entrant: call many times, only one
+   * draw occurs. If already drawing, waits until the current pass is done.
+   */
   deferredBatchRedraw() {
-    // Same rAF coalescing as effect flushes (Mithril m.redraw pending flag)
+    if (alreadyRedrawing) {
+      deferredBatchRedraw = true;
+      return;
+    }
     if (deferredQueued) return;
     deferredQueued = true;
     scheduleFrame(() => {
@@ -1904,15 +336,22 @@ export const M = {
   },
 
   invalidate() {
+    // Drops rendered instances, not store data — remounting must not lose it.
     clearInstances();
+    rootInstance = null;
+    rootCtx = null;
+    oldRoot = null;
   },
 
   get renderCount() {
     return renderCount;
   },
-  /** @deprecated use takePerfStats().flushes — rAF flush count since last sample */
+  get refreshCount() {
+    return refreshRequestCount;
+  },
+  /** @deprecated use takePerfStats().flushes */
   get drawCallCount() {
-    return flushCount;
+    return takePerfStats().flushes;
   },
   takeDrawCalls,
   takePerfStats,
@@ -1923,15 +362,35 @@ export const M = {
 
   link: Router.link,
   evaluate,
-  magic: {
-    // for extension
-  },
+  evaluateAction,
+  magic: {},
+
+  // VDOM surface, for tests and advanced use
+  Component,
+  ComponentVNode,
+  parseTemplate,
+  buildTemplate,
+  updateNodes,
 };
 
-// Aliases
+function installCloakStyle() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('m-cloak-style')) return;
+  const s = document.createElement('style');
+  s.id = 'm-cloak-style';
+  s.textContent = '[x-cloak],[m-cloak]{display:none !important;}';
+  document.head.appendChild(s);
+}
+
+// Any reactive write schedules one coalesced redraw. Reads never do, so a
+// render cannot invalidate itself — the feedback edge that caused hot loops
+// under the effect-per-binding model does not exist here.
+onInvalidate(() => {
+  if (rootEl || mounts.size) M.deferredBatchRedraw();
+});
+
 export default M;
 
-// Global for browser apps / console
 if (typeof window !== 'undefined') {
   window.M = M;
   window.m = M;

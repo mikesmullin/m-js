@@ -30,6 +30,7 @@ Thumbs.db
 *.sublime-*
 
 # Test / coverage
+tests/
 coverage/
 .nyc_output/
 

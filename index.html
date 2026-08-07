@@ -24,23 +24,32 @@
   }
 
   /* ---------------------------------------------------------------- shell */
-  #shell { display: grid; grid-template-columns: 264px 1fr; height: 100%; min-height: 0; }
+  #shell { display: grid; grid-template-columns: auto 1fr; height: 100%; min-height: 0; }
   #rail {
-    min-height: 0; background: linear-gradient(180deg, var(--bg-2), #070a10);
-    border-right: 1px solid var(--line); overflow-y: auto; padding: 18px 0 40px;
+    width: 264px; min-height: 0; display: flex; flex-direction: column;
+    background: linear-gradient(180deg, var(--bg-2), #070a10);
+    border-right: 1px solid var(--line); overflow: hidden; padding: 18px 0 0;
+    transition: width .22s cubic-bezier(.4,0,.2,1);
   }
-  #rail::-webkit-scrollbar { width: 8px; }
-  #rail::-webkit-scrollbar-thumb { background: #1b2634; border-radius: 4px; }
+  #rail nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    padding-bottom: 40px; transition: opacity .16s ease; }
+  #shell.railclosed #rail { width: 52px; }
+  #shell.railclosed #rail nav { opacity: 0; pointer-events: none; }
+  #rail nav::-webkit-scrollbar { width: 8px; }
+  #rail nav::-webkit-scrollbar-thumb { background: #1b2634; border-radius: 4px; }
 
-  .brand { padding: 4px 20px 18px; display: flex; align-items: center; gap: 11px; }
-  .brand .mark {
-    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-    background: linear-gradient(135deg, rgba(78,226,245,.22), rgba(255,119,200,.22));
-    border: 1px solid rgba(78,226,245,.38); font-family: var(--mono);
-    font-weight: 700; color: var(--cyan);
+  /* Fixed height so collapsing the rail — or removing the old wordmark —
+     never shifts the first group label or anything below it. */
+  .railtop { height: 56px; display: flex; align-items: center; padding: 0 13px; flex: 0 0 auto; }
+  .rail-btn {
+    width: 26px; height: 26px; display: grid; place-items: center; flex: 0 0 auto;
+    border-radius: 8px; cursor: pointer; color: var(--dimmer);
+    background: var(--panel); border: 1px solid var(--line-2); transition: all .15s;
   }
-  .brand h1 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
-  .brand .sub { font-family: var(--mono); font-size: 10.5px; color: var(--dimmer); }
+  .rail-btn:hover { color: var(--cyan); border-color: rgba(78,226,245,.45); background: rgba(78,226,245,.08); }
+  .rail-btn svg { width: 15px; height: 15px; }
+  .rail-btn .bar { transition: transform .22s ease; transform-origin: 10px 10px; }
+  #shell.railclosed .rail-btn .bar { transform: translateX(-5.5px); }
 
   .group-label {
     padding: 16px 20px 7px; font-size: 10px; letter-spacing: .13em;
@@ -60,7 +69,7 @@
   .dot.missing { background: var(--red); }    .dot.meta { background: var(--dimmer); }
 
   /* ---------------------------------------------------------------- stage */
-  #main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+  #main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
   #bar { height: 3px; background: #0f1620; flex: 0 0 auto; }
   #bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--pink)); transition: width .3s cubic-bezier(.4,0,.2,1); }
   #stage {
@@ -73,21 +82,32 @@
   .slide { animation: rise .26s ease-out; max-width: 1560px; margin: 0 auto; }
   @keyframes rise { from { opacity: 0 } to { opacity: 1 } }
 
-  /* Sticky slide header — collapses to a single compact row once you scroll,
-     keeping breadcrumb + name + status visible without eating the viewport. */
-  .slide-head {
-    position: sticky; top: 0; z-index: 5; background: var(--bg);
-    padding: 30px 0 14px; transition: padding .14s ease;
+  .slide-head { padding: 22px 0 14px; }
+
+  /* The pinned bar is an OVERLAY, not part of the scroll flow.
+     A sticky header that collapses changes document height, and Chrome's
+     scroll anchoring then compensates by subtracting exactly that much from
+     scrollTop — which, from a small offset, snaps you back to the top and
+     makes the page feel unscrollable. Taking it out of flow means layout
+     never moves, so scrolling is plain and predictable. */
+  #pin {
+    position: absolute; top: 3px; left: 0; right: 10px; z-index: 8;
+    display: none; align-items: baseline; gap: 14px; flex-wrap: nowrap;
+    padding: 10px 44px 11px; background: var(--bg);
+    border-bottom: 1px solid var(--line); box-shadow: 0 10px 20px -14px #000;
   }
-  .slide-head.stuck {
-    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-    padding: 10px 0 11px; border-bottom: 1px solid var(--line);
-    box-shadow: 0 10px 20px -14px #000;
+  #pin .kicker, #pin h2, #pin .pill { flex: 0 0 auto; }
+  /* Truncates rather than wrapping — the bar must stay one line tall. */
+  #pin .pintag {
+    flex: 1 1 auto; min-width: 0; color: var(--dimmer); font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .slide-head.stuck .kicker { order: -1; }
-  .slide-head.stuck .title-row { margin: 0; }
-  .slide-head.stuck h2.name { font-size: 21px; }
-  .slide-head.stuck .tagline { display: none; }
+  #pin .pintag code { color: var(--pink); font-family: var(--mono); font-size: .9em; }
+  @media (max-width: 900px) { #pin .pintag { display: none; } }
+  #pin.on { display: flex; }
+  #pin h2 { font-family: var(--mono); font-size: 21px; font-weight: 700; letter-spacing: -.02em; color: #fff; }
+  #pin h2 .sigil { color: var(--pink); }
+  @media (max-width: 1020px) { #pin { padding: 9px 18px 10px; } }
 
   .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dimmer); }
   .title-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin: 6px 0 8px; }
@@ -196,22 +216,23 @@
   .lab-head-right { display: flex; align-items: center; gap: 9px; }
 
   /* Highlighted textarea: a transparent input sits exactly on top of a
-     highlighted <pre>. Both must share every metric or the caret drifts. */
+     highlighted <pre>. Both must share every metric or the caret drifts —
+     same font, same padding, same wrapping, and no extra element between the
+     <pre> and its text (a nested <code> was the scroll container's undoing). */
   .ed { position: relative; flex: 1; min-height: 0; }
   .ed-hl, .ed-in {
     position: absolute; inset: 0; margin: 0; border: 0;
     padding: var(--code-pad); font-family: var(--mono); font-size: var(--code-size);
-    line-height: var(--code-lh); white-space: pre-wrap; overflow-wrap: break-word;
-    tab-size: 2; letter-spacing: normal;
+    line-height: var(--code-lh); white-space: pre; overflow-wrap: normal;
+    word-break: normal; tab-size: 2; letter-spacing: normal;
   }
-  .ed-hl { overflow: auto; pointer-events: none; color: var(--ink); }
-  .ed-hl::-webkit-scrollbar { width: 0; height: 0; }
+  .ed-hl { overflow: hidden; pointer-events: none; color: var(--ink); }
   .ed-in {
     width: 100%; height: 100%; resize: none; outline: none; overflow: auto;
     background: transparent; color: transparent; caret-color: var(--cyan);
   }
+  .ed-in::-webkit-scrollbar { width: 9px; height: 9px; }
   .ed-in::selection { background: rgba(78,226,245,.28); }
-  .ed-in::-webkit-scrollbar { width: 9px; }
   .ed-in::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 4px; }
 
   .stats { display: flex; align-items: center; gap: 9px; font-family: var(--mono); letter-spacing: 0; text-transform: none; font-size: 11px; }
@@ -234,7 +255,8 @@
   #foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 11px 44px; border-top: 1px solid var(--line); background: var(--bg-2); }
   .nav-btn { display: flex; align-items: center; gap: 7px; padding: 7px 15px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line-2); color: var(--dim); font-family: var(--sans); font-size: 13px; cursor: pointer; transition: all .13s; }
   .nav-btn:hover:not(:disabled) { color: var(--cyan); border-color: rgba(78,226,245,.45); background: rgba(78,226,245,.07); }
-  .nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+  .nav-btn[hidden] { display: none; }
+  #foot { min-height: 52px; }
   .counter { font-family: var(--mono); font-size: 12px; color: var(--dimmer); }
   .counter b { color: var(--ink); }
   kbd { font-family: var(--mono); font-size: 10.5px; padding: 1.5px 5px; border-radius: 4px; background: #131c28; border: 1px solid var(--line-2); color: var(--dim); }
@@ -298,9 +320,11 @@
   .callout a.xlink { color: var(--cyan); }
 
   /* --------------------------------------------------------------- chrome */
+  /* In normal flow at the top of the scroll container, so it scrolls away
+     like any other content rather than hovering over the page. */
   #topbar {
-    position: absolute; top: 10px; right: 22px; z-index: 20;
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+    padding: 10px 0 0; max-width: 1560px; margin: 0 auto;
   }
   #topbar a {
     display: inline-flex; align-items: center; gap: 6px; color: var(--dimmer);
@@ -323,15 +347,16 @@
   .nav-item .ext { margin-left: auto; color: var(--dimmer); font-size: 10px; }
 
   @media (max-width: 1020px) {
-    #topbar { position: static; padding: 0 12px 6px; }
     #shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
     #rail { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 0 0; overflow: hidden; display: flex; flex-direction: column; }
     #rail nav { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 3px; padding: 0 12px 8px; align-items: center; }
     #rail nav::-webkit-scrollbar { height: 5px; }
     #rail nav::-webkit-scrollbar-thumb { background: #1b2634; border-radius: 3px; }
-    .brand { padding: 0 12px 8px; }
-    .brand .mark { width: 26px; height: 26px; border-radius: 8px; font-size: 13px; }
-    .brand h1 { font-size: 13px; }
+    /* Horizontal rail: nothing to collapse, so the toggle steps aside. */
+    #rail, #shell.railclosed #rail { width: auto; }
+    #shell.railclosed #rail nav { opacity: 1; pointer-events: auto; }
+    #rail nav { flex: 0 0 auto; padding-bottom: 8px; }
+    .railtop { display: none; }
     .group-label { padding: 0 4px 0 12px; white-space: nowrap; align-self: center; }
     .nav-item { width: auto; border-left: 0; border-radius: 7px; padding: 4px 10px; white-space: nowrap; flex: 0 0 auto; }
     .nav-item.on { border-left-color: transparent; box-shadow: inset 0 -2px 0 var(--cyan); }
@@ -347,14 +372,23 @@
 
 <div id="shell">
   <aside id="rail">
-    <div class="brand">
-      <div class="mark">m</div>
-      <div><h1>m.js v3</h1><div class="sub">vs Alpine · vs v2</div></div>
+    <div class="railtop">
+      <button class="rail-btn" id="railtoggle" aria-label="Toggle sidebar"
+              aria-expanded="true" title="Toggle sidebar">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none"
+             stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <rect x="2.6" y="3.6" width="14.8" height="12.8" rx="2.6"></rect>
+          <line class="bar" x1="8.2" y1="3.6" x2="8.2" y2="16.4"></line>
+        </svg>
+      </button>
     </div>
     <nav id="nav"></nav>
   </aside>
 
   <div id="main">
+    <div id="bar"><i style="width:0%"></i></div>
+    <div id="pin"></div>
+    <div id="stage" tabindex="-1">
     <div id="topbar">
       <a href="https://mikesmullin.github.io/m-js-components/" target="_blank" rel="noopener">Storybook ↗</a>
       <a href="https://github.com/mikesmullin/m-js" target="_blank" rel="noopener" title="GitHub">
@@ -362,8 +396,8 @@
         GitHub
       </a>
     </div>
-    <div id="bar"><i style="width:0%"></i></div>
-    <div id="stage" tabindex="-1"></div>
+    <div id="slidehost"></div>
+    </div>
     <div id="foot">
       <button class="nav-btn" id="prev">← Prev</button>
       <div class="counter"><b id="cur">1</b> / <span id="tot">1</span> &nbsp;·&nbsp;
@@ -373,7 +407,7 @@
   </div>
 </div>
 
-<script id="mjs-runtime" type="text/plain">/*! m.js v3.2.0 | MIT | https://mikesmullin.github.io/m-js/ */
+<script id="mjs-runtime" type="text/plain">/*! m.js v3.2.1 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -2554,7 +2588,7 @@ function attachLifecycle(vnode, ast, scope, ctx) {
 }
 
 // src/m.js
-var VERSION = "3.2.0";
+var VERSION = "3.2.1";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;
@@ -3011,7 +3045,7 @@ const ITEMS = [
   hideHead: true,
   custom: `
   <header class="hero">
-    <p class="kicker">m.js · v3.2.0</p>
+    <p class="kicker">m.js · v3.2.1</p>
     <h1 class="hero-title"><span class="grad">Minimalist UI</span><br>for the modern web</h1>
     <p class="hero-sub">
       Alpine-style <code>x-*</code> directives, <code>$store</code>, a client Router and hot
@@ -3019,10 +3053,9 @@ const ITEMS = [
       nothing writes nothing. The API is <code>M.*</code>.
     </p>
     <div class="hero-cta">
-      <a class="btn primary" href="#start">Get started</a>
+      <a class="btn primary" href="#start">Quick start</a>
       <a class="btn" href="#overview">How it works</a>
       <a class="btn" href="#x-data">API reference</a>
-      <a class="btn" href="https://mikesmullin.github.io/m-js-components/" target="_blank" rel="noopener">Storybook ↗</a>
     </div>
   </header>
 
@@ -4549,7 +4582,7 @@ M.store('notifications', {
 },
 
 {
-  id: 'router', kind: 'meta', group: 'Router', status: 'meta', name: 'Router',
+  id: 'router', kind: 'meta', group: 'Extras', status: 'meta', name: 'Router',
   tagline: 'Pathname or hash routing, params, base-path detection — and a diff instead of a reload.',
   custom: `
   <p class="lede">The router ships with m.js and needs no extra package. Navigation runs the same
@@ -4707,12 +4740,7 @@ location / { try_files $uri $uri/ /index.html; }`, 'js')}
 },
 
 {
-  id: 'storybook', kind: 'meta', group: 'Router', status: 'meta', name: 'Storybook ↗',
-  external: 'https://mikesmullin.github.io/m-js-components/',
-},
-
-{
-  id: 'extras', kind: 'meta', group: 'Beyond Alpine', status: 'meta', name: 'What m.js adds',
+  id: 'extras', kind: 'meta', group: 'Extras', status: 'meta', name: 'What m.js adds',
   tagline: 'The parts with no Alpine equivalent at all — mostly inherited from v2.',
   custom: `
   <div class="cols">
@@ -4768,7 +4796,7 @@ M.takePerfStats()        // { flushes, effects, redraws }`, 'js')}
 },
 
 {
-  id: 'gaps', kind: 'meta', group: 'Beyond Alpine', status: 'meta', name: 'The complete gap list',
+  id: 'gaps', kind: 'meta', group: 'Extras', status: 'meta', name: 'The complete gap list',
   tagline: 'Everything in Alpine\'s core surface that m.js v3 does not do — in one place.',
   custom: `
   <div class="callout gone">
@@ -4837,12 +4865,11 @@ function labMarkup(it) {
         <span class="lab-head-right"><span>Edit</span>
           <span class="fig" data-fig>Fig ${idx + 1}.1</span></span>
         <span class="lab-head-right">
-          <span class="tip">runs as you type</span>
           <button class="reset" data-reset title="Restore the original source and restart the demo">↺ Reset</button>
         </span>
       </header>
       <div class="ed">
-        <pre class="ed-hl" aria-hidden="true"><code data-hl></code></pre>
+        <pre class="ed-hl" aria-hidden="true" data-hl></pre>
         <textarea class="ed-in" spellcheck="false" autocomplete="off"
           autocapitalize="off" data-src></textarea>
       </div>
@@ -4872,6 +4899,7 @@ function panel(cls, label, src, lang, note) {
 function render() {
   const it = ITEMS[idx];
   const stage = document.getElementById('stage');
+  const host = document.getElementById('slidehost');
   let html = `<div class="slide">`;
 
   if (it.custom) {
@@ -4908,9 +4936,20 @@ function render() {
   }
 
   html += `</div>`;
-  stage.innerHTML = html;
+  host.innerHTML = html;
+  const sig = it.name.startsWith('$')
+    ? `<span class="sigil">$</span>${it.name.slice(1)}`
+    : it.name;
+  document.getElementById('pin').innerHTML = it.hideHead ? '' :
+    `<div class="kicker">${it.custom ? it.group : `${it.kind} · ${
+      ITEMS.filter((x) => x.group === it.group).indexOf(it) + 1} of ${
+      ITEMS.filter((x) => x.group === it.group).length}`}</div>
+     <h2>${sig}</h2>
+     ${it.status === 'meta' ? '' : `<span class="pill ${it.status}">${S[it.status]}</span>`}
+     <span class="pintag">${it.tagline}</span>`;
   stage.scrollTop = 0;
   stage.focus({ preventScroll: true });
+  measureHead();
 
   if (it.examples && it.examples.length) wireLab(it);
   wireCopy();
@@ -4924,9 +4963,10 @@ function render() {
   }
   document.querySelector('#bar > i').style.width = ((idx + 1) / ITEMS.length) * 100 + '%';
   document.getElementById('cur').textContent = idx + 1;
-  document.getElementById('prev').disabled = idx === 0;
-  document.getElementById('next').disabled =
-    !ITEMS.slice(idx + 1).some((x) => !x.external);
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  prevBtn.hidden = idx === 0;
+  nextBtn.hidden = !ITEMS.slice(idx + 1).some((x) => !x.external);
   const on = document.querySelectorAll('.nav-item')[idx];
   if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   location.hash = it.id;
@@ -4945,11 +4985,17 @@ function wireLab(it) {
   const markDirty = () => resetBtn.classList.toggle(
     'dirty', ta.value !== it.examples[cur].src.trim());
 
+  // The <pre> is scrolled to match the textarea. Scrolling a <code> child does
+  // nothing — it is not the scroll container — which is why the highlighted
+  // text used to sit still while only the caret moved.
+  const sync = () => {
+    out.scrollTop = ta.scrollTop;
+    out.scrollLeft = ta.scrollLeft;
+  };
   const paint = () => {
     // trailing newline keeps the final line visible under the caret
     out.innerHTML = hlHtml(ta.value + '\n');
-    out.scrollTop = ta.scrollTop;
-    out.scrollLeft = ta.scrollLeft;
+    sync();
   };
 
   const run = () => {
@@ -4978,10 +5024,7 @@ function wireLab(it) {
   resetBtn.addEventListener('click', () => load(cur));
 
   ta.addEventListener('input', () => { paint(); markDirty(); schedule(); });
-  ta.addEventListener('scroll', () => {
-    out.scrollTop = ta.scrollTop;
-    out.scrollLeft = ta.scrollLeft;
-  });
+  ta.addEventListener('scroll', sync);
   ta.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
     e.preventDefault();
@@ -5089,9 +5132,18 @@ function buildNav() {
   document.getElementById('tot').textContent = ITEMS.length;
 }
 
-document.getElementById('stage').addEventListener('scroll', function () {
+// Show the pinned bar once the real header has scrolled out of view.
+let pinAfter = 0;
+
+function measureHead() {
   const head = document.querySelector('.slide-head');
-  if (head) head.classList.toggle('stuck', this.scrollTop > 16);
+  const pin = document.getElementById('pin');
+  pinAfter = head ? head.offsetTop + head.offsetHeight - 12 : Infinity;
+  pin.classList.remove('on');
+}
+
+document.getElementById('stage').addEventListener('scroll', function () {
+  document.getElementById('pin').classList.toggle('on', this.scrollTop > pinAfter);
 }, { passive: true });
 
 const go = (d) => {
@@ -5120,6 +5172,17 @@ addEventListener('hashchange', () => {
   const i = ITEMS.findIndex((x) => x.id === location.hash.slice(1));
   if (i >= 0 && i !== idx) { idx = i; render(); }
 });
+
+const shell = document.getElementById('shell');
+const railToggle = document.getElementById('railtoggle');
+const setRail = (closed) => {
+  shell.classList.toggle('railclosed', closed);
+  railToggle.setAttribute('aria-expanded', String(!closed));
+  try { localStorage.mjsRailClosed = closed ? '1' : ''; } catch (_) {}
+};
+railToggle.addEventListener('click', () =>
+  setRail(!shell.classList.contains('railclosed')));
+try { if (localStorage.mjsRailClosed === '1') setRail(true); } catch (_) {}
 
 buildNav();
 const fromHash = ITEMS.findIndex((i) => i.id === location.hash.slice(1));

@@ -407,7 +407,7 @@
   </div>
 </div>
 
-<script id="mjs-runtime" type="text/plain">/*! m.js v3.2.1 | MIT | https://mikesmullin.github.io/m-js/ */
+<script id="mjs-runtime" type="text/plain">/*! m.js v3.2.2 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -1336,6 +1336,9 @@ function applyListener(oldVNode, newVNode, k, v, ov) {
     } else {
       if (v.rebind)
         v.rebind(ov);
+      newVNode.attrs[k] = ov;
+      if (newVNode.dom)
+        ov.host = newVNode.dom;
     }
   }
 }
@@ -2588,7 +2591,7 @@ function attachLifecycle(vnode, ast, scope, ctx) {
 }
 
 // src/m.js
-var VERSION = "3.2.1";
+var VERSION = "3.2.2";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;
@@ -3045,7 +3048,7 @@ const ITEMS = [
   hideHead: true,
   custom: `
   <header class="hero">
-    <p class="kicker">m.js · v3.2.1</p>
+    <p class="kicker">m.js · v3.2.2</p>
     <h1 class="hero-title"><span class="grad">Minimalist UI</span><br>for the modern web</h1>
     <p class="hero-sub">
       Alpine-style <code>x-*</code> directives, <code>$store</code>, a client Router and hot

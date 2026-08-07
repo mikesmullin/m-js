@@ -1,4 +1,4 @@
-/*! m.js v3.2.1 | MIT | https://mikesmullin.github.io/m-js/ */
+/*! m.js v3.2.2 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -927,6 +927,9 @@ function applyListener(oldVNode, newVNode, k, v, ov) {
     } else {
       if (v.rebind)
         v.rebind(ov);
+      newVNode.attrs[k] = ov;
+      if (newVNode.dom)
+        ov.host = newVNode.dom;
     }
   }
 }
@@ -2179,7 +2182,7 @@ function attachLifecycle(vnode, ast, scope, ctx) {
 }
 
 // src/m.js
-var VERSION = "3.2.1";
+var VERSION = "3.2.2";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;

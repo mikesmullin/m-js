@@ -91,6 +91,30 @@ const server = Bun.serve({
       return new Response('Not found: ' + url.pathname, { status: 404 });
     }
 
+    // docs/*.html ships with __MJS_RUNTIME__ / __MJS_VERSION__ placeholders
+    // that the release step fills in. Do the same on the fly so `bun run dev`
+    // serves a working site — with HMR — straight from source.
+    if (filePath.endsWith('.html')) {
+      let html = await Bun.file(filePath).text();
+      if (html.includes('__MJS_RUNTIME__') || html.includes('__MJS_VERSION__')) {
+        const bundle = join(ROOT, 'dist', 'm.js');
+        if (!existsSync(bundle)) {
+          return new Response(
+            '<h1>dist/m.js is missing</h1><p>Run <code>bun run build</code> first — ' +
+              'the docs inline the bundle.</p>',
+            { status: 500, headers: { 'Content-Type': 'text/html' } },
+          );
+        }
+        const pkg = JSON.parse(await Bun.file(join(ROOT, 'package.json')).text());
+        html = html
+          .split('__MJS_RUNTIME__').join(await Bun.file(bundle).text())
+          .split('__MJS_VERSION__').join(pkg.version);
+      }
+      return new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+
     const file = Bun.file(filePath);
     return new Response(file, {
       headers: {

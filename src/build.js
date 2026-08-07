@@ -315,6 +315,25 @@ export function buildNode(ast, scope, ctx) {
   return buildElement(ast, scope, ctx);
 }
 
+/** Object/function keys get a stable identity, the way a Map would give them. */
+const objectKeyIds = new WeakMap();
+let objectKeySeq = 0;
+
+/**
+ * Turn a :key value into a sibling id. The type is part of the id, so 1 and
+ * '1' stay distinct — stringifying alone would report them as a duplicate and
+ * hand the second row a position-derived key, costing it its identity on the
+ * next reorder.
+ */
+function keyToSid(key) {
+  if (key !== null && (typeof key === 'object' || typeof key === 'function')) {
+    let id = objectKeyIds.get(key);
+    if (id === undefined) objectKeyIds.set(key, (id = `o${++objectKeySeq}`));
+    return `k:${id}`;
+  }
+  return `k:${typeof key}:${String(key)}`;
+}
+
 function buildFor(ast, scope, ctx) {
   const spec = ast.for;
   if (!spec) return null;
@@ -322,23 +341,25 @@ function buildFor(ast, scope, ctx) {
   const rows = normalizeList(list);
   const parent = scope ?? {};
   const siblings = {};
-  const seen = new Set();
+  const seen = new Map();
 
   rows.forEach(([item, index], i) => {
     const locals = { [spec.item]: item, $index: i };
     if (spec.index) locals[spec.index] = index;
     const rowScope = makeRowScope(parent, locals);
 
-    let key = ast.key
+    const key = ast.key
       ? evaluate(ast.key.expression, rowScope, ctx)
       : index;
-    let sid = `k:${String(key)}`;
+    const base = keyToSid(key);
+    const dup = seen.get(base) || 0;
+    seen.set(base, dup + 1);
+    let sid = base;
     // Duplicate keys would silently collapse rows; disambiguate and warn.
-    if (seen.has(sid)) {
+    if (dup > 0) {
       console.warn('[m] duplicate x-for key', key, spec.raw);
-      sid = `${sid}:${i}`;
+      sid = `${base}#${dup}`;
     }
-    seen.add(sid);
 
     const body = ast.isTemplate
       ? buildFragment(ast.children, rowScope, ctx)

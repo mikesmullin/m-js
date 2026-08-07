@@ -34,6 +34,40 @@ export function onInvalidate(fn) {
   return () => invalidationListeners.delete(fn);
 }
 
+/**
+ * Callbacks that must not run until the DOM reflects the current state
+ * ($nextTick). A redraw drains this queue once it has committed; the frame
+ * fallback covers the case where no redraw was pending at all.
+ *
+ * Ordering matters: a reactive write schedules its redraw frame *before*
+ * $nextTick schedules this one, and frame callbacks run in registration
+ * order — so the redraw drains the queue first and this is a no-op.
+ */
+const afterRenderQueue = [];
+let afterRenderScheduled = false;
+
+export function afterRender(fn) {
+  afterRenderQueue.push(fn);
+  if (afterRenderScheduled) return;
+  afterRenderScheduled = true;
+  scheduleFrame(() => {
+    afterRenderScheduled = false;
+    drainAfterRender();
+  });
+}
+
+export function drainAfterRender() {
+  if (afterRenderQueue.length === 0) return;
+  const list = afterRenderQueue.splice(0, afterRenderQueue.length);
+  for (const fn of list) {
+    try {
+      fn();
+    } catch (e) {
+      console.error('[m] $nextTick', e);
+    }
+  }
+}
+
 let flushCount = 0;
 let effectCount = 0;
 let redrawCount = 0;

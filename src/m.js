@@ -36,6 +36,7 @@ import {
 } from './scope.js';
 import {
   bumpRedrawCount,
+  drainAfterRender,
   effect,
   flushSync,
   onInvalidate,
@@ -125,6 +126,8 @@ function performRedraw() {
   }
   drainLifecycle();
   renderCount++;
+  // $nextTick callbacks run last: the DOM is committed and hooks have fired.
+  drainAfterRender();
 }
 
 // ---------------------------------------------------------------------------

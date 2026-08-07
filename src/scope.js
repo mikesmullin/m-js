@@ -5,7 +5,7 @@
  * evaluates them on every redraw, so compilation must not be on that path.
  */
 
-import { reactive, effect, RAW } from './reactive.js';
+import { reactive, effect, afterRender, RAW } from './reactive.js';
 
 // ---------------------------------------------------------------------------
 // Registries
@@ -94,8 +94,11 @@ export function buildMagics(scope, ctx = {}) {
       });
     },
     $nextTick(fn) {
+      // Must resolve only once the DOM reflects current state. A plain
+      // microtask fires before the frame-scheduled redraw and would hand the
+      // caller a stale DOM — the exact thing $nextTick exists to prevent.
       return new Promise((resolve) => {
-        queueMicrotask(() => {
+        afterRender(() => {
           fn?.();
           resolve();
         });

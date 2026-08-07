@@ -759,6 +759,14 @@ function applyListener(oldVNode, newVNode, k, v, ov) {
     } else {
       // Same shape — keep the live listener, but let it see fresh scope.
       if (v.rebind) v.rebind(ov);
+      // Critical: the function attached to the DOM is still `ov`. The new
+      // vnode must remember that live identity, otherwise the *next* patch
+      // rebinds a dead handler while the DOM keeps the original stale one.
+      // That shows up as x-for rows whose click handlers fire with old
+      // `$index` / row scope after a reorder or sort.
+      newVNode.attrs[k] = ov;
+      // host element can change if the vnode was recreated; keep it current.
+      if (newVNode.dom) ov.host = newVNode.dom;
     }
   }
 }

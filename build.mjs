@@ -14,6 +14,7 @@
  */
 import { gzipSync } from 'node:zlib';
 import {
+  readdir,
   mkdir,
   writeFile,
   readFile,
@@ -30,6 +31,7 @@ import { spawnSync } from 'node:child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
 const DIST = join(ROOT, 'dist');
+const DOCS_SRC = join(ROOT, 'docs');
 const ENTRY = join(ROOT, 'src', 'browser.js');
 const PKG_PATH = join(ROOT, 'package.json');
 
@@ -200,171 +202,55 @@ async function cmdPackage() {
 // ---------------------------------------------------------------------------
 
 /**
- * Rewrite docs site sources so the framework is loaded from ./dist/m.min.js
- * (the published GH Pages copy), not vendored ./m/* modules.
- */
-async function patchDocsTree(docsRoot, version) {
-  // app.js
-  const cdnUrl = `${CDN_BASE}/dist/${DIST_FILES.min}`;
-  await writeFile(
-    join(docsRoot, 'app.js'),
-    `/**
- * m.js docs site (orphan \`${DOCS_BRANCH}\` branch)
- * Framework documentation only — UI storybook lives at m-js-components.
+ * Assemble the published site from docs/ + dist/.
  *
- * Runtime is the cloud-hosted CDN bundle (same URL any site can copy-paste):
- *   ${cdnUrl}
+ * docs/index.html ships with `__MJS_RUNTIME__` and `__MJS_VERSION__`
+ * placeholders so the source stays readable; the runtime is inlined here so
+ * every live example in the docs runs offline and instantly, with no CDN
+ * round-trip per iframe.
  */
-import M, { Router } from '${cdnUrl}';
-
-window.__M__ = { M, m: M, Router };
-
-/**
- * @param {number} [bust]
- */
-async function boot(bust = 0) {
-  const q = bust ? \`?t=\${bust}\` : '';
-
-  const [
-    { default: Layout },
-    { default: Home },
-    { default: Guide },
-    { default: Api },
-    { default: HmrDemo },
-  ] = await Promise.all([
-    import(\`./components/layout.js\${q}\`),
-    import(\`./pages/home.js\${q}\`),
-    import(\`./pages/guide.js\${q}\`),
-    import(\`./pages/api.js\${q}\`),
-    import(\`./pages/hmr.js\${q}\`),
-  ]);
-
-  Router.reset();
-  Router.detectBase();
-  Router.setTitleFormat((t) => (t ? \`\${t} · m.js\` : 'm.js v${version.split('.')[0]}'));
-
-  const page = (factory) => () => Layout({ page: factory() });
-
-  Router.register('/', 'Home', page(Home));
-  Router.register('/guide', 'Guide', page(Guide));
-  Router.register('/api', 'API', page(Api));
-  Router.register('/hmr', 'HMR Demo', page(HmrDemo));
-  Router.rewrite('/index.html', '/');
-
-  if (!window.__M_APP_MOUNTED__) {
-    window.__M_APP_MOUNTED__ = true;
-    M.mount('#app');
-    console.info('[docs] m.js v${version} mounted', M.version, 'base=', Router.base || '(root)');
-  } else {
-    M.invalidate();
-    Router.detectBase();
-    Router.syncFromLocation();
-    M.deferredBatchRedraw();
-    console.info('[docs] m.js hot reloaded', bust);
+async function assembleDocs(docsRoot, version) {
+  const runtime = await readFile(join(DIST, DIST_FILES.raw), 'utf8');
+  if (runtime.includes('</scr' + 'ipt>')) {
+    die('bundle contains a closing script tag — it cannot be inlined');
   }
+
+  // The docs branch is fully generated: drop everything but .git, then copy.
+  for (const name of await readdir(docsRoot)) {
+    if (name === '.git') continue;
+    await rm(join(docsRoot, name), { recursive: true, force: true });
+  }
+  await cp(DOCS_SRC, docsRoot, { recursive: true });
+  await cp(DIST, join(docsRoot, 'dist'), { recursive: true });
+
+  let stamped = 0;
+  for (const rel of await listHtml(docsRoot)) {
+    const file = join(docsRoot, rel);
+    const before = await readFile(file, 'utf8');
+    const after = before
+      .split('__MJS_RUNTIME__').join(runtime)
+      .split('__MJS_VERSION__').join(version);
+    if (after !== before) {
+      await writeFile(file, after, 'utf8');
+      stamped++;
+    }
+  }
+  log(`docs: ${stamped} page(s) stamped with v${version} (runtime ${fmtSize(runtime.length)})`);
 }
 
-await boot(0);
-window.__M_BOOT__ = boot;
-export { boot };
-export default { boot };
-`,
-    'utf8',
-  );
-
-  // Rewrite page/component imports: ../m/router.js | ../m/m.js → ../dist/m.min.js
-  const rewriteTargets = [
-    'components/layout.js',
-    'pages/home.js',
-    'pages/guide.js',
-    'pages/api.js',
-    'pages/hmr.js',
-  ];
-
-  for (const rel of rewriteTargets) {
-    const abs = join(docsRoot, rel);
-    if (!(await exists(abs))) continue;
-    let src = await readFile(abs, 'utf8');
-    src = src.replace(
-      /from\s+['"]\.\.\/m\/(?:m|router|index)\.js['"]/g,
-      `from '../dist/${DIST_FILES.min}'`,
-    );
-    src = src.replace(
-      /from\s+['"]\.\/m\/(?:m|router|index)\.js['"]/g,
-      `from './dist/${DIST_FILES.min}'`,
-    );
-    // Keep named Router import working when files only imported Router before
-    // e.g. `import { Router } from '...'` — already fine with ESM bundle.
-    // Files that did `import M from '../m/m.js'` stay valid as default import.
-    await writeFile(abs, src, 'utf8');
-  }
-
-  // CDN playground lives on the home page (pages/home.js) — do not re-inject into guide.
-
-  // layout version badge
-  {
-    const layoutPath = join(docsRoot, 'components/layout.js');
-    if (await exists(layoutPath)) {
-      let layout = await readFile(layoutPath, 'utf8');
-      layout = layout.replace(
-        /v\d+\.\d+\.\d+/g,
-        `v${version}`,
-      );
-      await writeFile(layoutPath, layout, 'utf8');
+/** Every .html under a directory, as paths relative to it. */
+async function listHtml(dir, prefix = '') {
+  const out = [];
+  for (const entry of await readdir(join(dir, prefix), { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (entry.name === '.git' || entry.name === 'dist') continue;
+      out.push(...(await listHtml(dir, rel)));
+    } else if (entry.name.endsWith('.html')) {
+      out.push(rel);
     }
   }
-
-  // index.html — framework loads via app.js → dist/m.min.js.
-  // Do not auto-start the HMR WebSocket client on GitHub Pages (no dev server).
-  {
-    const indexPath = join(docsRoot, 'index.html');
-    if (await exists(indexPath)) {
-      let html = await readFile(indexPath, 'utf8');
-      html = html.replace(
-        /\n?\s*<script type="module" src="\.\/(?:m\/)?hot-client\.js"><\/script>/,
-        '',
-      );
-      await writeFile(indexPath, html, 'utf8');
-    }
-  }
-
-  // Drop outdated vendored framework modules under m/ (keep README note)
-  const vendored = ['m/m.js', 'm/router.js', 'm/store.js', 'm/index.js'];
-  for (const rel of vendored) {
-    const abs = join(docsRoot, rel);
-    if (await exists(abs)) await rm(abs);
-  }
-
-  await mkdir(join(docsRoot, 'm'), { recursive: true });
-  await writeFile(
-    join(docsRoot, 'm', 'README.md'),
-    [
-      '# Runtime location',
-      '',
-      'The docs site loads the **published** m.js bundle from `../dist/`.',
-      '',
-      `| File | Purpose |`,
-      `|------|---------|`,
-      `| \`dist/${DIST_FILES.raw}\` | All-in-one ESM, not minified |`,
-      `| \`dist/${DIST_FILES.min}\` | Minified ESM (what the docs import) |`,
-      `| \`dist/${DIST_FILES.gz}\` | Minified + gzip (download / size) |`,
-      '',
-      `CDN: ${CDN_BASE}/dist/${DIST_FILES.min}`,
-      '',
-      `Canonical source: https://github.com/mikesmullin/m-js (v3 branch, \`src/\`)`,
-      `Built with: \`bun build.mjs package\` / published via \`bun build.mjs release\``,
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-
-  // Sync hot-client from main source for the HMR demo page
-  const hotSrc = join(ROOT, 'src', 'hot-client.js');
-  if (await exists(hotSrc)) {
-    await cp(hotSrc, join(docsRoot, 'hot-client.js'));
-    // keep legacy path working if index still points at m/hot-client.js
-    await cp(hotSrc, join(docsRoot, 'm', 'hot-client.js'));
-  }
+  return out;
 }
 
 async function publishDocs(version) {
@@ -378,13 +264,8 @@ async function publishDocs(version) {
     // Shallow worktree of docs branch
     run('git', ['worktree', 'add', '--force', work, `${REMOTE}/${DOCS_BRANCH}`]);
 
-    // Copy fresh dist into the docs tree
-    const docsDist = join(work, 'dist');
-    await rm(docsDist, { recursive: true, force: true });
-    await cp(DIST, docsDist, { recursive: true });
-
-    // Patch HTML/JS to use dist bundle
-    await patchDocsTree(work, version);
+    // Regenerate the whole site from docs/ + dist/
+    await assembleDocs(work, version);
 
     // Commit if there are changes
     run('git', ['add', '-A'], { cwd: work });
@@ -455,16 +336,16 @@ async function cmdRelease(args) {
     const work = await mkdtemp(join(tmpdir(), 'm-js-docs-dry-'));
     try {
       run('git', ['worktree', 'add', '--force', work, `${REMOTE}/${DOCS_BRANCH}`]);
-      const docsDist = join(work, 'dist');
-      await rm(docsDist, { recursive: true, force: true });
-      await cp(DIST, docsDist, { recursive: true });
-      await patchDocsTree(work, version);
-      const sample = await readFile(join(work, 'app.js'), 'utf8');
-      const expectedCdn = `${CDN_BASE}/dist/${DIST_FILES.min}`;
-      if (!sample.includes(expectedCdn)) {
-        die(`dry-run: app.js was not patched to import CDN URL (${expectedCdn})`);
+      await assembleDocs(work, version);
+      const page = await readFile(join(work, 'index.html'), 'utf8');
+      if (page.includes('__MJS_RUNTIME__') || page.includes('__MJS_VERSION__')) {
+        die('dry-run: index.html still has unresolved placeholders');
       }
-      log('dry-run docs patch OK');
+      if (!page.includes('m.js v3')) die('dry-run: index.html looks wrong');
+      for (const f of ['demos/router-hash.html', 'demos/router-path.html', '404.html', 'dist/m.min.js']) {
+        if (!(await exists(join(work, f)))) die(`dry-run: missing ${f}`);
+      }
+      log('dry-run docs assembly OK');
       log('dry-run complete — dist/ is ready; re-run without --dry-run to publish');
     } catch (e) {
       console.error(e);

@@ -1,6 +1,11 @@
 /**
  * Client-side router — ported & simplified from m.js v2 (M.mjs).
- * Pathname-based; preserves URL across HMR.
+ * Preserves the URL across HMR.
+ *
+ * Two URL modes:
+ *   'path' (default)  /guide          — needs a server that serves index.html
+ *                                       for unknown paths (or a 404 fallback)
+ *   'hash'            /#/guide        — works on any static host, no rewrites
  *
  * Supports a base path for project sites (e.g. GitHub Pages `/m-js`):
  *   Router.setBase('/m-js')  or auto-detect via Router.detectBase()
@@ -16,6 +21,9 @@ let currentUri = '';
 
 /** @type {string} mount prefix with no trailing slash, e.g. "/m-js" or "" */
 let basePath = '';
+
+/** @type {'path'|'hash'} how the app path is carried in the URL */
+let mode = 'path';
 
 /** @type {((title: string) => string) | null} */
 let formatTitle = null;
@@ -61,9 +69,61 @@ function withBase(uri) {
   return basePath + path;
 }
 
+/** App path as it currently appears in the address bar. */
+function readLocation() {
+  if (mode === 'hash') {
+    const raw = (window.location.hash || '').replace(/^#/, '');
+    return normalizePath(raw || '/');
+  }
+  return stripBase(window.location.pathname || '/');
+}
+
+/** The full URL string for an app path, in the current mode. */
+function locationFor(path) {
+  if (mode === 'hash') {
+    return window.location.pathname + window.location.search + '#' + path;
+  }
+  return withBase(path);
+}
+
+/**
+ * history.pushState throws SecurityError on an opaque origin (a srcdoc iframe,
+ * some embedded contexts). Losing the URL is far better than losing the app.
+ */
+function writeHistory(replace, url, title) {
+  try {
+    if (replace) window.history.replaceState(null, title || '', url);
+    else window.history.pushState(null, title || '', url);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** What to compare against to decide whether the address bar needs updating. */
+function currentLocation() {
+  return mode === 'hash'
+    ? window.location.pathname + window.location.search + (window.location.hash || '#/')
+    : window.location.pathname;
+}
+
 export class Router {
   static get uri() {
     return currentUri;
+  }
+
+  /** @returns {'path'|'hash'} */
+  static get mode() {
+    return mode;
+  }
+
+  /**
+   * Choose how the app path is carried in the URL. Call before start().
+   * 'hash' needs no server cooperation, which is what static hosts want.
+   * @param {'path'|'hash'} next
+   */
+  static setMode(next) {
+    mode = next === 'hash' ? 'hash' : 'path';
   }
 
   static get params() {
@@ -217,9 +277,13 @@ export class Router {
     if (typeof title === 'string' && title) {
       document.title = title;
     }
-    const full = withBase(path);
-    if (window.location.pathname !== full) {
-      window.history.pushState(null, title || '', full);
+    const full = locationFor(path);
+    if (currentLocation() !== full) {
+      // Assigning the hash creates the same history entry as pushState and is
+      // permitted on opaque origins. The resulting hashchange is recognised as
+      // our own write by _popstate and ignored.
+      if (mode === 'hash') window.location.hash = path;
+      else writeHistory(false, full, title);
     }
     onChange?.();
   }
@@ -249,11 +313,13 @@ export class Router {
   }
 
   static _popstate() {
+    // Our own hash write echoes back as a hashchange — nothing to re-sync.
+    if (readLocation() === currentUri) return;
     Router.syncFromLocation();
   }
 
   static syncFromLocation() {
-    const path = stripBase(window.location.pathname || '/');
+    const path = readLocation();
     const matched = Router.match(path);
     currentUri = path;
     params = matched?.params ?? {};
@@ -280,13 +346,20 @@ export class Router {
     }
     e.preventDefault();
     e.stopPropagation();
-    // Accept both app paths ("/guide") and base-prefixed ("/m-js/guide")
+    // Accept an app path ("/guide"), a base-prefixed one ("/m-js/guide") or a
+    // hash link ("#/guide"). Without unwrapping the "#", normalizePath would
+    // strip the fragment and send every hash-mode link to "/".
     let appPath = href;
-    if (basePath && (href === basePath || href === basePath + '/' || href.startsWith(basePath + '/'))) {
+    if (mode === 'hash') {
+      appPath = href.startsWith('#') ? href.slice(1) || '/' : href;
+    } else if (
+      basePath &&
+      (href === basePath || href === basePath + '/' || href.startsWith(basePath + '/'))
+    ) {
       appPath = stripBase(href);
     }
     if (e.ctrlKey || e.metaKey) {
-      window.open(`${window.location.origin}${withBase(appPath)}`);
+      window.open(window.location.origin + locationFor(normalizePath(appPath)));
     } else {
       Router.set(appPath);
     }
@@ -298,13 +371,16 @@ export class Router {
    * @param {string} uri
    */
   static href(uri) {
-    return withBase(uri);
+    return mode === 'hash' ? '#' + normalizePath(uri) : withBase(uri);
   }
 
   static start() {
-    if (!basePath) Router.detectBase();
+    if (!basePath && mode === 'path') Router.detectBase();
     window.addEventListener('popstate', Router._popstate, false);
-    const path = stripBase(window.location.pathname || '/');
+    if (mode === 'hash') {
+      window.addEventListener('hashchange', Router._popstate, false);
+    }
+    const path = readLocation();
     const matched = Router.match(path);
     currentUri = path;
     params = matched?.params ?? {};
@@ -313,15 +389,18 @@ export class Router {
       if (typeof formatTitle === 'function') title = formatTitle(title);
       if (typeof title === 'string' && title) document.title = title;
       // Keep address bar under base (e.g. /m-js/ not bare host path)
-      const full = withBase(path);
-      if (window.location.pathname !== full) {
-        window.history.replaceState(null, title || '', full);
+      const full = locationFor(path);
+      if (currentLocation() !== full) {
+        if (!writeHistory(true, full, title) && mode === 'hash') {
+          window.location.hash = path;
+        }
       }
     }
   }
 
   static stop() {
     window.removeEventListener('popstate', Router._popstate, false);
+    window.removeEventListener('hashchange', Router._popstate, false);
   }
 
   /** @returns {string[]} */
@@ -330,6 +409,7 @@ export class Router {
   }
 
   static reset() {
+    mode = 'path';
     routes.clear();
     currentUri = '';
     params = {};

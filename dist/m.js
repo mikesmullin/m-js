@@ -1,10 +1,11 @@
-/*! m.js v3.1.2 | MIT | https://mikesmullin.github.io/m-js/ */
+/*! m.js v3.2.0 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
 var routes = new Map;
 var currentUri = "";
 var basePath = "";
+var mode = "path";
 var formatTitle = null;
 var onChange = null;
 var params = {};
@@ -35,10 +36,43 @@ function withBase(uri) {
     return basePath + "/";
   return basePath + path;
 }
+function readLocation() {
+  if (mode === "hash") {
+    const raw = (window.location.hash || "").replace(/^#/, "");
+    return normalizePath(raw || "/");
+  }
+  return stripBase(window.location.pathname || "/");
+}
+function locationFor(path) {
+  if (mode === "hash") {
+    return window.location.pathname + window.location.search + "#" + path;
+  }
+  return withBase(path);
+}
+function writeHistory(replace, url, title) {
+  try {
+    if (replace)
+      window.history.replaceState(null, title || "", url);
+    else
+      window.history.pushState(null, title || "", url);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+function currentLocation() {
+  return mode === "hash" ? window.location.pathname + window.location.search + (window.location.hash || "#/") : window.location.pathname;
+}
 
 class Router {
   static get uri() {
     return currentUri;
+  }
+  static get mode() {
+    return mode;
+  }
+  static setMode(next) {
+    mode = next === "hash" ? "hash" : "path";
   }
   static get params() {
     return params;
@@ -146,9 +180,12 @@ class Router {
     if (typeof title === "string" && title) {
       document.title = title;
     }
-    const full = withBase(path);
-    if (window.location.pathname !== full) {
-      window.history.pushState(null, title || "", full);
+    const full = locationFor(path);
+    if (currentLocation() !== full) {
+      if (mode === "hash")
+        window.location.hash = path;
+      else
+        writeHistory(false, full, title);
     }
     onChange?.();
   }
@@ -172,10 +209,12 @@ class Router {
     return matched.route.fn(params);
   }
   static _popstate() {
+    if (readLocation() === currentUri)
+      return;
     Router.syncFromLocation();
   }
   static syncFromLocation() {
-    const path = stripBase(window.location.pathname || "/");
+    const path = readLocation();
     const matched = Router.match(path);
     currentUri = path;
     params = matched?.params ?? {};
@@ -202,24 +241,29 @@ class Router {
     e.preventDefault();
     e.stopPropagation();
     let appPath = href;
-    if (basePath && (href === basePath || href === basePath + "/" || href.startsWith(basePath + "/"))) {
+    if (mode === "hash") {
+      appPath = href.startsWith("#") ? href.slice(1) || "/" : href;
+    } else if (basePath && (href === basePath || href === basePath + "/" || href.startsWith(basePath + "/"))) {
       appPath = stripBase(href);
     }
     if (e.ctrlKey || e.metaKey) {
-      window.open(`${window.location.origin}${withBase(appPath)}`);
+      window.open(window.location.origin + locationFor(normalizePath(appPath)));
     } else {
       Router.set(appPath);
     }
     return false;
   }
   static href(uri) {
-    return withBase(uri);
+    return mode === "hash" ? "#" + normalizePath(uri) : withBase(uri);
   }
   static start() {
-    if (!basePath)
+    if (!basePath && mode === "path")
       Router.detectBase();
     window.addEventListener("popstate", Router._popstate, false);
-    const path = stripBase(window.location.pathname || "/");
+    if (mode === "hash") {
+      window.addEventListener("hashchange", Router._popstate, false);
+    }
+    const path = readLocation();
     const matched = Router.match(path);
     currentUri = path;
     params = matched?.params ?? {};
@@ -229,19 +273,23 @@ class Router {
         title = formatTitle(title);
       if (typeof title === "string" && title)
         document.title = title;
-      const full = withBase(path);
-      if (window.location.pathname !== full) {
-        window.history.replaceState(null, title || "", full);
+      const full = locationFor(path);
+      if (currentLocation() !== full) {
+        if (!writeHistory(true, full, title) && mode === "hash") {
+          window.location.hash = path;
+        }
       }
     }
   }
   static stop() {
     window.removeEventListener("popstate", Router._popstate, false);
+    window.removeEventListener("hashchange", Router._popstate, false);
   }
   static list() {
     return [...routes.keys()];
   }
   static reset() {
+    mode = "path";
     routes.clear();
     currentUri = "";
     params = {};
@@ -1182,6 +1230,30 @@ function onInvalidate(fn) {
   invalidationListeners.add(fn);
   return () => invalidationListeners.delete(fn);
 }
+var afterRenderQueue = [];
+var afterRenderScheduled = false;
+function afterRender(fn) {
+  afterRenderQueue.push(fn);
+  if (afterRenderScheduled)
+    return;
+  afterRenderScheduled = true;
+  scheduleFrame(() => {
+    afterRenderScheduled = false;
+    drainAfterRender();
+  });
+}
+function drainAfterRender() {
+  if (afterRenderQueue.length === 0)
+    return;
+  const list = afterRenderQueue.splice(0, afterRenderQueue.length);
+  for (const fn of list) {
+    try {
+      fn();
+    } catch (e) {
+      console.error("[m] $nextTick", e);
+    }
+  }
+}
 var flushCount = 0;
 var effectCount = 0;
 var redrawCount = 0;
@@ -1486,7 +1558,7 @@ function buildMagics(scope, ctx = {}) {
     },
     $nextTick(fn) {
       return new Promise((resolve) => {
-        queueMicrotask(() => {
+        afterRender(() => {
           fn?.();
           resolve();
         });
@@ -1849,6 +1921,17 @@ function buildNode(ast, scope, ctx) {
     return buildMount(ast, scope, ctx);
   return buildElement(ast, scope, ctx);
 }
+var objectKeyIds = new WeakMap;
+var objectKeySeq = 0;
+function keyToSid(key) {
+  if (key !== null && (typeof key === "object" || typeof key === "function")) {
+    let id = objectKeyIds.get(key);
+    if (id === undefined)
+      objectKeyIds.set(key, id = `o${++objectKeySeq}`);
+    return `k:${id}`;
+  }
+  return `k:${typeof key}:${String(key)}`;
+}
 function buildFor(ast, scope, ctx) {
   const spec = ast.for;
   if (!spec)
@@ -1857,19 +1940,21 @@ function buildFor(ast, scope, ctx) {
   const rows = normalizeList(list);
   const parent = scope ?? {};
   const siblings = {};
-  const seen = new Set;
+  const seen = new Map;
   rows.forEach(([item, index], i) => {
     const locals = { [spec.item]: item, $index: i };
     if (spec.index)
       locals[spec.index] = index;
     const rowScope = makeRowScope(parent, locals);
-    let key = ast.key ? evaluate(ast.key.expression, rowScope, ctx) : index;
-    let sid = `k:${String(key)}`;
-    if (seen.has(sid)) {
+    const key = ast.key ? evaluate(ast.key.expression, rowScope, ctx) : index;
+    const base = keyToSid(key);
+    const dup = seen.get(base) || 0;
+    seen.set(base, dup + 1);
+    let sid = base;
+    if (dup > 0) {
       console.warn("[m] duplicate x-for key", key, spec.raw);
-      sid = `${sid}:${i}`;
+      sid = `${base}#${dup}`;
     }
-    seen.add(sid);
     const body = ast.isTemplate ? buildFragment(ast.children, rowScope, ctx) : buildElement(ast, rowScope, ctx);
     siblings[sid] = body;
   });
@@ -2094,7 +2179,7 @@ function attachLifecycle(vnode, ast, scope, ctx) {
 }
 
 // src/m.js
-var VERSION = "3.1.2";
+var VERSION = "3.2.0";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;
@@ -2151,6 +2236,7 @@ function performRedraw() {
   }
   drainLifecycle();
   renderCount++;
+  drainAfterRender();
 }
 var instanceCache = new Map;
 function clearInstances() {

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hash routing · m.js Router</title>
+<link rel="stylesheet" href="./_shell.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%230b1018%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-family=%27monospace%27 font-size=%2720%27 font-weight=%27bold%27 fill=%27%234ee2f5%27 text-anchor=%27middle%27%3Em%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="../index.html#router">← back to the Router docs</a>
+    <span class="mode">Router.setMode('hash')</span>
+  </div>
+
+  <h1>Hash routing</h1>
+  <p class="sub">
+    The app path lives after the <code>#</code>, so the server only ever sees this one file.
+    Deep links and refreshes work on any static host with no rewrite rules — which is why this
+    documentation site uses it.
+  </p>
+
+  <div class="urlbar">
+    <span class="lbl">address bar</span>
+    <span class="val" id="url">…</span>
+  </div>
+
+  <div id="app"></div>
+
+  <div class="note warn" style="margin-top:18px">
+    <h4>Things to try</h4>
+    <ul>
+      <li>Click the links and watch the real address bar above the page change.</li>
+      <li>Type into the shell input, then navigate — it keeps its value, because the shell is
+        reconciled rather than rebuilt.</li>
+      <li>Press <b>reload</b> on a deep link like <code>#/users/7</code>. It comes straight back.</li>
+      <li>Use the browser <b>back</b> and <b>forward</b> buttons.</li>
+    </ul>
+  </div>
+</div>
+
+<script type="module">
+import M, { Router } from '../dist/m.min.js';
+
+const paint = () => { document.getElementById('url').textContent =
+  location.pathname + location.search + location.hash; };
+
+let renders = 0;
+
+const Shell = (title, body) => ({
+  template: `
+    <nav class="routes">
+      <a :href="href('/')"          :class="on('/')"          @click="go">Home</a>
+      <a :href="href('/guide')"     :class="on('/guide')"     @click="go">Guide</a>
+      <a :href="href('/users/7')"   :class="on('/users/7')"   @click="go">User 7</a>
+      <a :href="href('/users/42')"  :class="on('/users/42')"  @click="go">User 42</a>
+      <a :href="href('/nope')"      :class="on('/nope')"      @click="go">Unknown</a>
+    </nav>
+
+    <div class="panel">
+      <header>Shell — shared by every route</header>
+      <div class="body keep">
+        <label>type here:</label>
+        <input placeholder="survives navigation">
+        <span class="hits">shell renders: <b x-text="renders"></b></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header x-text="title"></header>
+      <div class="body" x-html="body"></div>
+    </div>
+  `,
+  title,
+  body,
+  get renders() { return renders; },
+  href: (u) => Router.href(u),
+  on(u) { return Router.uri === u ? 'on' : ''; },
+  go: Router.link,
+});
+
+Router.setMode('hash');
+Router.setTitleFormat((t) => `${t} · hash routing`);
+Router.onChange(() => { renders++; paint(); });
+
+Router.register('/', 'Home', () =>
+  Shell('Home', '<h2>Home</h2><p>Pick a route above. Only the panel below the shell changes.</p>'));
+Router.register('/guide', 'Guide', () =>
+  Shell('Guide', '<h2>Guide</h2><p>Same page, same DOM — a different branch of the tree.</p>'));
+Router.register('/users/:id', 'User', (p) =>
+  Shell(`User ${p.id}`,
+    `<h2>User ${p.id}</h2><p>Matched from <code>/users/:id</code>; <code>Router.params</code> is ` +
+    `<code>${JSON.stringify(p)}</code>.</p>`));
+
+M.mount('#app');
+paint();
+addEventListener('hashchange', paint);
+addEventListener('popstate', paint);
+</script>
+</body>
+</html>

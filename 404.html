@@ -1,50 +1,45 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>m.js v3</title>
-  <meta name="description" content="m.js v3 — minimalist UI framework with HMR, Router, and Store" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            neon: {
-              cyan: '#22d3ee',
-              pink: '#f472b6',
-              purple: '#c084fc',
-              blue: '#38bdf8',
-            },
-            void: {
-              950: '#050510',
-              900: '#0a0a1a',
-              800: '#12122a',
-              700: '#1a1a3e',
-            }
-          },
-          fontFamily: {
-            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-          },
-          boxShadow: {
-            neon: '0 0 20px rgba(34, 211, 238, 0.25), 0 0 40px rgba(244, 114, 182, 0.1)',
-            'neon-pink': '0 0 16px rgba(244, 114, 182, 0.4)',
-          }
-        }
-      }
-    }
-  </script>
-  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
-  <link rel="stylesheet" href="./styles.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<meta charset="UTF-8">
+<title>Redirecting… · m.js</title>
+<meta name="robots" content="noindex">
+<style>
+  body { background:#06080d; color:#8fa3bb; font:15px/1.6 system-ui,sans-serif;
+         display:grid; place-items:center; min-height:100vh; margin:0; }
+  a { color:#4ee2f5 }
+</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%230b1018%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-family=%27monospace%27 font-size=%2720%27 font-weight=%27bold%27 fill=%27%234ee2f5%27 text-anchor=%27middle%27%3Em%3C/text%3E%3C/svg%3E">
 </head>
-<body class="h-full bg-void-950 text-slate-100 antialiased">
-  <div id="app" class="min-h-full"></div>
-  <script type="module" src="./app.js" data-hmr-entry></script>
-  <script type="module" src="./m/hot-client.js"></script>
+<body>
+<p>Redirecting… <a id="fallback" href="/">continue</a></p>
+<script>
+// GitHub Pages serves this file for any path it cannot find. Two jobs:
+//
+//  1. Keep old inbound links working. The site used to be path-routed
+//     (/guide, /api, /hmr); it is hash-routed now, so map them across.
+//  2. Let the path-routing demo survive a refresh. It pushes real paths that
+//     no static host can serve, so bounce back to the demo file carrying the
+//     attempted path in a query — exactly the fallback the demo describes.
+(function () {
+  var path = location.pathname;
+  // Everything before the last "/demos/" (or "/") is the site root.
+  var m = path.match(/^(.*?)\/demos\//);
+  var base = m ? m[1] : path.replace(/\/[^/]*$/, '');
+  if (base === '/') base = '';
+
+  document.getElementById('fallback').href = base + '/';
+
+  if (m) {
+    var rest = path.slice((base + '/demos').length) || '/';
+    location.replace(base + '/demos/router-path.html?p=' + encodeURIComponent(rest) + location.search.replace('?', '&'));
+    return;
+  }
+
+  var app = path.slice(base.length).replace(/\/+$/, '') || '/';
+  var LEGACY = { '/guide': '#start', '/api': '#x-data', '/hmr': '#router', '/index.html': '' };
+  location.replace(base + '/' + (LEGACY[app] !== undefined ? LEGACY[app] : ''));
+})();
+</script>
 </body>
 </html>

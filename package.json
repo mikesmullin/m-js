@@ -1,6 +1,6 @@
 {
   "name": "m-js",
-  "version": "3.2.2",
+  "version": "3.3.0",
   "description": "A minimalist UI component framework for the web \u2014 Alpine-inspired templates, Zustand-like store, built-in Router & HMR.",
   "type": "module",
   "main": "src/index.js",

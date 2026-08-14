@@ -344,7 +344,31 @@ function buildFor(ast, scope, ctx) {
   const seen = new Map();
 
   rows.forEach(([item, index], i) => {
-    const locals = { [spec.item]: item, $index: i };
+    const locals = { $index: i };
+    if (spec.destr) {
+      const names = spec.destr;
+      const isArrayDestr = spec.destrRaw?.startsWith('[');
+      if (isArrayDestr) {
+        if (Array.isArray(item)) {
+          for (let di = 0; di < names.length; di++) locals[names[di]] = item[di];
+        } else if (item != null && typeof item === 'object') {
+          // For array destr on object entries: item is value, index is key — already handled
+          for (let di = 0; di < names.length; di++) locals[names[di]] = item[di];
+        } else {
+          for (const n of names) locals[n] = undefined;
+        }
+      } else {
+        // Object destructuring: {a, b} — item is the object
+        if (item != null && typeof item === 'object' && !Array.isArray(item)) {
+          for (const n of names) locals[n] = item[n];
+        } else {
+          for (const n of names) locals[n] = undefined;
+        }
+      }
+      if (!locals[spec.item] && names.length) locals[spec.item] = item;
+    } else {
+      locals[spec.item] = item;
+    }
     if (spec.index) locals[spec.index] = index;
     const rowScope = makeRowScope(parent, locals);
 

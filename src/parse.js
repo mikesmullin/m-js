@@ -253,9 +253,53 @@ function walkNode(el, parentNs, parentPreserveWs) {
   return node;
 }
 
-/** `item in items` / `(item, i) in items` / `item, i in items` */
+/** `item in items` / `(item, i) in items` / `item, i in items` / `[a,b] in items` / `{a,b} in items` / `[a,b], i in items` */
 export function parseForExpression(expression) {
-  const match = String(expression).match(
+  const raw = String(expression);
+  // Try destructuring first: [a, b] in list, {a, b} in list, [a, b], i in list, etc.
+  const destrMatch = raw.match(/^\s*(\[.*?\]|\{.*?\})\s*(?:,\s*([A-Za-z_$][\w$]*))?\s+(?:in|of)\s+(.+)$/s);
+  if (destrMatch) {
+    const [, destr, index, list] = destrMatch;
+    const trimmed = destr.trim();
+    let names;
+    if (trimmed.startsWith('[')) {
+      // Array destructuring: [a, b] or [a, b, ...rest]
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) {
+        console.warn('[m] bad x-for', expression);
+        return null;
+      }
+      names = inner.split(',').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^\.\.\./, ''));
+      // Validate each name
+      for (const n of names) {
+        if (!/^[A-Za-z_$][\w$]*$/.test(n)) {
+          console.warn('[m] bad x-for', expression);
+          return null;
+        }
+      }
+    } else {
+      // Object destructuring: {a, b} or {a, b: c}
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) {
+        console.warn('[m] bad x-for', expression);
+        return null;
+      }
+      names = inner.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+        // Handle {a: b} -> take alias, {a} -> take a
+        const colonIdx = s.indexOf(':');
+        if (colonIdx !== -1) return s.slice(colonIdx + 1).trim().replace(/^\.\.\./, '');
+        return s.replace(/^\.\.\./, '').trim();
+      });
+      for (const n of names) {
+        if (!/^[A-Za-z_$][\w$]*$/.test(n)) {
+          console.warn('[m] bad x-for', expression);
+          return null;
+        }
+      }
+    }
+    return { item: names[0], index, list: list.trim(), raw, destr: names, destrRaw: trimmed };
+  }
+  const match = raw.match(
     /^\s*\(?\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*))?\s*\)?\s+(?:in|of)\s+(.+)$/,
   );
   if (!match) {

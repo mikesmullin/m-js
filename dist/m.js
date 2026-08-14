@@ -1207,7 +1207,47 @@ function walkNode(el, parentNs, parentPreserveWs) {
   return node;
 }
 function parseForExpression(expression) {
-  const match = String(expression).match(/^\s*\(?\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*))?\s*\)?\s+(?:in|of)\s+(.+)$/);
+  const raw = String(expression);
+  const destrMatch = raw.match(/^\s*(\[.*?\]|\{.*?\})\s*(?:,\s*([A-Za-z_$][\w$]*))?\s+(?:in|of)\s+(.+)$/s);
+  if (destrMatch) {
+    const [, destr, index2, list2] = destrMatch;
+    const trimmed = destr.trim();
+    let names;
+    if (trimmed.startsWith("[")) {
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) {
+        console.warn("[m] bad x-for", expression);
+        return null;
+      }
+      names = inner.split(",").map((s) => s.trim()).filter(Boolean).map((s) => s.replace(/^\.\.\./, ""));
+      for (const n of names) {
+        if (!/^[A-Za-z_$][\w$]*$/.test(n)) {
+          console.warn("[m] bad x-for", expression);
+          return null;
+        }
+      }
+    } else {
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) {
+        console.warn("[m] bad x-for", expression);
+        return null;
+      }
+      names = inner.split(",").map((s) => s.trim()).filter(Boolean).map((s) => {
+        const colonIdx = s.indexOf(":");
+        if (colonIdx !== -1)
+          return s.slice(colonIdx + 1).trim().replace(/^\.\.\./, "");
+        return s.replace(/^\.\.\./, "").trim();
+      });
+      for (const n of names) {
+        if (!/^[A-Za-z_$][\w$]*$/.test(n)) {
+          console.warn("[m] bad x-for", expression);
+          return null;
+        }
+      }
+    }
+    return { item: names[0], index: index2, list: list2.trim(), raw, destr: names, destrRaw: trimmed };
+  }
+  const match = raw.match(/^\s*\(?\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*))?\s*\)?\s+(?:in|of)\s+(.+)$/);
   if (!match) {
     console.warn("[m] bad x-for", expression);
     return null;
@@ -1945,7 +1985,35 @@ function buildFor(ast, scope, ctx) {
   const siblings = {};
   const seen = new Map;
   rows.forEach(([item, index], i) => {
-    const locals = { [spec.item]: item, $index: i };
+    const locals = { $index: i };
+    if (spec.destr) {
+      const names = spec.destr;
+      const isArrayDestr = spec.destrRaw?.startsWith("[");
+      if (isArrayDestr) {
+        if (Array.isArray(item)) {
+          for (let di = 0;di < names.length; di++)
+            locals[names[di]] = item[di];
+        } else if (item != null && typeof item === "object") {
+          for (let di = 0;di < names.length; di++)
+            locals[names[di]] = item[di];
+        } else {
+          for (const n of names)
+            locals[n] = undefined;
+        }
+      } else {
+        if (item != null && typeof item === "object" && !Array.isArray(item)) {
+          for (const n of names)
+            locals[n] = item[n];
+        } else {
+          for (const n of names)
+            locals[n] = undefined;
+        }
+      }
+      if (!locals[spec.item] && names.length)
+        locals[spec.item] = item;
+    } else {
+      locals[spec.item] = item;
+    }
     if (spec.index)
       locals[spec.index] = index;
     const rowScope = makeRowScope(parent, locals);

@@ -30,6 +30,7 @@ const DIR_ORDER = [
   'effect',
   'cloak',
   'mount',
+  'component',
 ];
 
 export function isDir(name) {
@@ -232,6 +233,7 @@ function walkNode(el, parentNs, parentPreserveWs) {
       case 'transition': node.transition = d; break;
       case 'model': node.model = d; break;
       case 'mount': node.mount = d; break;
+      case 'component': node.component = d; break;
       case 'cloak': node.cloak = true; break;
       case 'effect': (node.effects ??= []).push(d); break;
       case 'on': (node.on ??= []).push(d); break;

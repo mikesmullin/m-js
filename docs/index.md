@@ -2,7 +2,7 @@
 
 > Alpine-style `x-*` directives, `$store`, a client Router and hot reload — with keyed virtual-DOM reconciliation underneath, so a redraw that changes nothing writes nothing. The API is `M.*`.
 
-**Version:** 3.2.1 · **CDN:** `https://mikesmullin.github.io/m-js/dist/m.min.js` · **GitHub:** [mikesmullin/m-js](https://github.com/mikesmullin/m-js) · **Storybook:** [m-js-components](https://mikesmullin.github.io/m-js-components/)
+**Version:** 3.4.0 · **CDN:** `https://mikesmullin.github.io/m-js/dist/m.min.js` · **GitHub:** [mikesmullin/m-js](https://github.com/mikesmullin/m-js) · **Storybook:** [m-js-components](https://mikesmullin.github.io/m-js-components/)
 
 ---
 
@@ -28,6 +28,7 @@
   - [x-ref](#x-ref) — Trade-off
   - [x-cloak](#x-cloak) — Full parity
   - [x-ignore](#x-ignore) — Trade-off
+  - [x-component](#x-component) — Beyond Alpine
 - [API reference — Properties](#api-reference--properties)
   - [$store](#store) — Full parity
   - [$el](#el) — Trade-off
@@ -37,6 +38,7 @@
   - [$nextTick](#nexttick) — Trade-off
 - [API reference — Methods](#api-reference--methods)
   - [M.data](#mdata) — Full parity
+  - [M.component](#mcomponent) — Beyond Alpine
   - [M.store](#mstore) — Full parity
 - [Extras](#extras)
   - [Router](#router)
@@ -1537,6 +1539,109 @@ class Embed extends Component {
 
 ---
 
+### x-component
+
+> Invoke a registered widget by name. The callee owns the markup; the host only passes props.
+
+**Status:** 🔵 Beyond Alpine
+
+**Alpine.js:**
+
+```html
+<!-- Alpine has no equivalent. x-data injects a scope;
+the caller still types the HTML every time. -->
+<div x-data="dropdown">
+  <button @click="toggle()">…</button>
+</div>
+```
+
+**m.js v2:**
+
+```js
+m(Button, { color: 'primary', label: 'Send', onclick: send })
+m(PriorityIcon, { priority: c.priority })
+```
+
+> v2 composition is one call. v3's x-data cannot do that — it has no template of its own. x-component restores the call form inside a template string.
+
+**m.js v3:**
+
+```html
+<span x-component="prio" :priority="c.priority"></span>
+<span x-component="uiButton" variant="primary" @click="send()">Send</span>
+```
+
+> Props are evaluated in the *parent* scope — including x-for row locals — then patched onto the instance. The host element is replaced by the widget's template root.
+
+**How it is different from x-data and x-mount:**
+
+- `x-data` is a **scope**. The markup stays at the call site. Nested `x-data` inside `x-for` cannot see row locals.
+- `x-mount` nests a `{ template, … }` object already held in state. It is the right tool for page-sized children (`Shell → page`). A new object identity remounts.
+- `x-component="name"` looks the name up in `M.component`. The widget owns its template. Bound attrs (`:priority="c.priority"`) are evaluated against the parent — that is how a list row can pass `c` without the x-for hole.
+- The host is **replaced** by the widget root (no wrapper). Leftover host attrs, `:class`, `x-show` and `@click` are forwarded onto that root. Host children fill a `<slot>`.
+- Declare `props: ['priority']` so only those names become instance fields. Everything else on the host is forwarded. An empty static attribute (`disabled`) becomes `true`.
+- The instance is a `ComponentVNode` keyed by AST position / `:key`. Updating a prop does not remount; `init()` runs once.
+- `m-component` is an alias.
+
+**Why it matters:** A component library is a function of attrs → view. Without a call form, every compound widget re-types the primitive HTML and improvements never inherit. This is the Alpine-shaped spelling of v2's `m(Name, attrs)`.
+
+**Examples:**
+
+*One definition, many call sites:*
+
+```html
+<script>
+  const META = {
+    p1: { short: 'P1', color: '#ef4444' },
+    p2: { short: 'P2', color: '#f97316' },
+    p3: { short: 'P3', color: '#eab308' },
+  }
+  M.component('prio', {
+    props: ['priority'],
+    priority: 'p3',
+    get meta() { return META[this.priority] || META.p3 },
+    template: `<span class="tag" :style="'outline-color:'+meta.color" x-text="meta.short"></span>`
+  })
+</script>
+
+<div x-data="{ items: [
+  {id:1, priority:'p1', title:'checkout'},
+  {id:2, priority:'p2', title:'webhooks'},
+  {id:3, priority:'p3', title:'replica lag'}
+]}">
+  <div class="box" x-for="c in items" :key="c.id">
+    <span x-component="prio" :priority="c.priority"></span>
+    <span x-text="c.title"></span>
+  </div>
+</div>
+```
+
+*Slots + host events — a reusable button:*
+
+```html
+<script>
+  M.component('uiButton', {
+    props: ['variant', 'disabled', 'label'],
+    variant: '',
+    disabled: false,
+    label: '',
+    template: `<button type="button" class="btn" :class="variant" :disabled="disabled">
+      <span x-show="label" x-text="label"></span>
+      <slot></slot>
+    </button>`
+  })
+</script>
+
+<div x-data="{ n: 0, busy: false }">
+  <span x-component="uiButton" variant="primary" @click="n++">clicked <span x-text="n"></span>×</span>
+  <span x-component="uiButton" :disabled="busy" @click="busy = !busy">
+    <span x-text="busy ? 'Busy…' : 'Toggle busy'"></span>
+  </span>
+</div>
+```
+
+---
+
 ## API reference — Properties
 
 ### $store
@@ -2139,6 +2244,110 @@ M.data('dropdown', (start = false) => ({
 
 ---
 
+### M.component
+
+> Register a named widget that owns its template, then invoke it with `x-component`.
+
+**Status:** 🔵 Beyond Alpine
+
+**Alpine.js:**
+
+```js
+// Alpine.data is scope-only — there is no
+// "this component's markup" to register.
+```
+
+**m.js v2:**
+
+```js
+class Button extends Component {
+  view() {
+    return m('button.btn', this.attrs, this.attrs.label)
+  }
+}
+m(Button, { label: 'Send', color: 'primary' })
+```
+
+> v2 registered a class and called it with m(). v3 registers a definition object (or factory) and calls it from a template.
+
+**m.js v3:**
+
+```js
+M.component('uiButton', {
+  props: ['variant', 'label', 'disabled'],
+  variant: '',
+  label: '',
+  disabled: false,
+  template: `<button type="button" class="btn"
+              :class="variant" :disabled="disabled"
+              x-text="label"></button>`
+})
+
+// later, anywhere:
+// <span x-component="uiButton" variant="primary" label="Send"></span>
+```
+
+> Object form shares the definition as a prototype (getters and methods live once). Factory form `(props) => ({ template, … })` runs once per instance — use it when the widget has local state.
+
+**Notes:**
+
+- `M.component(name, def)` writes the registry; `M.component(name)` reads it back.
+- `props` lists the names copied from the host. Bound values (`:priority="c.priority"`) are evaluated in the parent scope on every redraw and patched onto the instance — `init()` is not re-run.
+- An `init()` method runs once after mount; `destroy()` when the instance is removed.
+- Re-registering the same name (HMR) updates the template for the next view. Existing instances keep their state.
+- This is not v2's `M.component(Class, attrs)` hyperscript call. The v3 spelling is the registry; the call site is the `x-component` directive.
+
+**Why it matters:** x-data reused behaviour. x-component reuses markup. A 100-widget catalog is only possible if changing Button once updates every Composer, Dialog and Toolbar that invokes it.
+
+**Examples:**
+
+*Object form with a getter:*
+
+```html
+<script>
+  M.component('prio', {
+    props: ['priority'],
+    priority: 'p2',
+    get meta() {
+      return {
+        p1: { s: 'P1', c: '#ef4444' },
+        p2: { s: 'P2', c: '#f97316' },
+        p3: { s: 'P3', c: '#eab308' },
+      }[this.priority]
+    },
+    template: `<span class="tag" :style="'outline-color:'+meta.c" x-text="meta.s"></span>`
+  })
+</script>
+
+<div x-data="{ p: 'p2' }">
+  <button @click="p = 'p1'">P1</button>
+  <button @click="p = 'p2'">P2</button>
+  <button @click="p = 'p3'">P3</button>
+  <div class="box on">
+    current: <span x-component="prio" :priority="p"></span>
+  </div>
+</div>
+```
+
+*Factory form — local state per instance:*
+
+```html
+<script>
+  M.component('tally', () => ({
+    n: 0,
+    inc() { this.n++ },
+    template: `<button type="button" @click="inc()">
+      <span x-text="n"></span> clicks
+    </button>`
+  }))
+</script>
+
+<div class="box"><span x-component="tally"></span></div>
+<div class="box"><span x-component="tally"></span></div>
+```
+
+---
+
 ### M.store
 
 > Declare global reactive state, readable anywhere via `$store`.
@@ -2454,6 +2663,18 @@ Pathname routing with params, base-path detection and title formatting. Navigati
 
 Mounts a `{ template, … }` object held in state as a child component. This is how the docs layout injects the current page into its shell.
 
+#### x-component — named widgets that own their markup
+
+```js
+M.component('prio', { props: ['priority'], template: '…' })
+```
+
+```html
+<span x-component="prio" :priority="c.priority"></span>
+```
+
+The Alpine-shaped spelling of v2's `m(Name, attrs)`. Props evaluate in the parent (list-safe). Compound templates invoke primitives instead of copying their HTML.
+
 #### Redraw control & instrumentation
 
 ```js
@@ -2499,6 +2720,7 @@ Explicit redraw exists for imperative escape hatches, but you rarely need it: an
 - **Foreign-target listeners are tracked and torn down** when the element is removed.
 - **`@window.resize`** accepted alongside `@resize.window`.
 - **A root component / Router / HMR layer** that Alpine leaves entirely to you.
+- **`x-component` / `M.component`** — a widget owns its template and is invoked by name with bound props. Alpine's `x-data` only injects a scope; the caller still types the HTML.
 
 ---
 

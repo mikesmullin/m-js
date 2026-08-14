@@ -10,6 +10,7 @@ import {
   Component,
   ComponentVNode,
   ElementVNode,
+  FragmentVNode,
   HTMLElementVNode,
   RawHTMLVNode,
   TextVNode,
@@ -21,12 +22,13 @@ import {
 import { parseTemplate } from './parse.js';
 import {
   assignPath,
+  componentRegistry,
   createDataScope,
   evaluate,
   evaluateAction,
   stringify,
 } from './scope.js';
-import { effect, findReactiveRoot, RAW } from './reactive.js';
+import { effect, findReactiveRoot, RAW, reactive } from './reactive.js';
 
 // ---------------------------------------------------------------------------
 // Attribute helpers
@@ -306,9 +308,13 @@ export function buildNode(ast, scope, ctx) {
   // x-if drops the node entirely.
   if (ast.if && !evaluate(ast.if.expression, scope, ctx)) return null;
 
+  // Default <slot> is replaced with the host's children (parent scope).
+  if (ast.tag === 'slot') return buildSlot(ast, scope, ctx);
+
   // A bare <template> with no structural directive renders its children.
   if (ast.isTemplate) return buildFragment(ast.children, scope, ctx);
 
+  if (ast.component) return buildComponent(ast, scope, ctx);
   if (ast.data) return buildDataComponent(ast, scope, ctx);
   if (ast.mount) return buildMount(ast, scope, ctx);
 
@@ -387,7 +393,7 @@ function buildFor(ast, scope, ctx) {
 
     const body = ast.isTemplate
       ? buildFragment(ast.children, rowScope, ctx)
-      : buildElement(ast, rowScope, ctx);
+      : buildRepeatedHost(ast, rowScope, ctx);
     siblings[sid] = body;
   });
 
@@ -434,6 +440,334 @@ function normalizeList(list) {
     return Object.entries(list).map(([k, v]) => [v, k]);
   }
   return [];
+}
+
+/**
+ * x-for on a bare element (not <template>) still honours x-component / x-data
+ * / x-mount on that same node. Previously this always went through
+ * buildElement and silently dropped those directives.
+ */
+function buildRepeatedHost(ast, scope, ctx) {
+  if (ast.component) return buildComponent(ast, scope, ctx);
+  if (ast.data) return buildDataComponent(ast, scope, ctx);
+  if (ast.mount) return buildMount(ast, scope, ctx);
+  return buildElement(ast, scope, ctx);
+}
+
+// ---------------------------------------------------------------------------
+// x-component → named widget; callee owns the template
+// ---------------------------------------------------------------------------
+
+/** Host attrs that are never treated as widget props. */
+const HOST_RESERVED = new Set([
+  'class', 'id', 'style', 'role', 'hidden', 'tabindex',
+]);
+
+function isReservedHostAttr(name) {
+  if (!name) return true;
+  if (HOST_RESERVED.has(name)) return true;
+  return /^(aria|data)-/.test(name);
+}
+
+function hasSlotContent(astList) {
+  if (!astList || !astList.length) return false;
+  return astList.some((n) => n.kind !== 'text' || (n.text && /\S/.test(n.text)));
+}
+
+function buildSlot(ast, scope, ctx) {
+  if (hasSlotContent(ctx?.slotAst)) {
+    return buildFragment(ctx.slotAst, ctx.slotScope ?? scope, ctx.slotCtx ?? ctx);
+  }
+  return buildFragment(ast.children, scope, ctx);
+}
+
+function declaredProps(def) {
+  if (!def) return null;
+  if (Array.isArray(def.props)) return def.props;
+  return null;
+}
+
+function collectComponentProps(def, ast, scope, ctx) {
+  const declared = declaredProps(typeof def === 'function' ? null : def);
+  const names = new Set(declared || []);
+
+  if (!declared) {
+    for (const k of Object.keys(ast.attrs || {})) {
+      if (!isReservedHostAttr(k)) names.add(k);
+    }
+    for (const b of ast.binds || []) {
+      if (b.arg && b.arg !== 'class' && b.arg !== 'style' && b.arg !== 'key') {
+        names.add(b.arg);
+      }
+    }
+  }
+
+  const props = {};
+  for (const name of names) {
+    const bind = (ast.binds || []).find((b) => b.arg === name);
+    if (bind) {
+      props[name] = evaluate(bind.expression, scope, ctx);
+    } else if (ast.attrs && Object.prototype.hasOwnProperty.call(ast.attrs, name)) {
+      const raw = ast.attrs[name];
+      props[name] = raw === '' ? true : raw;
+    }
+  }
+  return props;
+}
+
+function collectForwarded(def, ast, scope, ctx) {
+  const declared = declaredProps(typeof def === 'function' ? null : def);
+  const isProp = (name) => (declared ? declared.includes(name) : !isReservedHostAttr(name));
+
+  const attrs = {};
+  for (const [k, v] of Object.entries(ast.attrs || {})) {
+    if (isProp(k)) continue;
+    attrs[k] = v;
+  }
+
+  const binds = [];
+  for (const b of ast.binds || []) {
+    if (!b.arg || b.arg === 'key') continue;
+    if (isProp(b.arg)) continue;
+    binds.push(b);
+  }
+
+  return {
+    attrs,
+    binds,
+    on: ast.on ? ast.on.slice() : null,
+    show: ast.show || null,
+    model: ast.model || null,
+    ref: ast.ref || null,
+    init: ast.init || null,
+    effects: ast.effects || null,
+    cloak: ast.cloak || false,
+    transition: ast.transition || null,
+  };
+}
+
+function applyProps(target, props) {
+  if (!target || !props) return;
+  for (const [k, v] of Object.entries(props)) {
+    if (target[k] !== v) target[k] = v;
+  }
+}
+
+function instantiateWidget(def, props) {
+  let data;
+  if (typeof def === 'function') {
+    data = def(props) || {};
+  } else {
+    data = Object.create(def);
+  }
+  applyProps(data, props);
+  return reactive(data);
+}
+
+function widgetTemplate(def, scope) {
+  if (scope?.template) return scope.template;
+  if (def && typeof def === 'object' && def.template) return def.template;
+  return '';
+}
+
+const widgetClasses = new Map();
+
+function widgetClassFor(name) {
+  let cls = widgetClasses.get(name);
+  if (cls) return cls;
+
+  cls = class WidgetComponent extends Component {
+    oninit() {
+      this.refs = {};
+      this.ctx = {
+        refs: this.refs,
+        getEl: () => this.rootDom,
+      };
+      const def = componentRegistry.get(this.attrs.name) ?? this.attrs.def;
+      this.scope = instantiateWidget(def, this.attrs.props);
+      this.syncSlotCtx();
+      if (typeof this.scope.init === 'function') {
+        queueMicrotask(() => {
+          try {
+            this.scope.init();
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      }
+    }
+
+    syncSlotCtx() {
+      this.ctx.slotAst = this.attrs.slotAst;
+      this.ctx.slotScope = this.attrs.parentScope;
+      this.ctx.slotCtx = this.attrs.slotCtx;
+    }
+
+    onbeforeupdate() {
+      applyProps(this.scope, this.attrs.props);
+      this.syncSlotCtx();
+    }
+
+    view() {
+      this.syncSlotCtx();
+      const def = componentRegistry.get(this.attrs.name) ?? this.attrs.def;
+      const html = widgetTemplate(def, this.scope);
+      const tree = buildTemplate(html, this.scope, this.ctx);
+      const root = firstElementVNode(tree);
+      if (root) {
+        mergeForwardedOnto(root, this.attrs.forwarded, this.attrs.parentScope, this.attrs.slotCtx);
+        const prev = root.oncreate;
+        root.oncreate = (dom) => {
+          this.rootDom = dom;
+          prev?.(dom);
+        };
+      }
+      return tree;
+    }
+
+    onremove() {
+      if (typeof this.scope?.destroy === 'function') {
+        try {
+          this.scope.destroy();
+        } catch (_) {}
+      }
+    }
+  };
+
+  Object.defineProperty(cls, 'name', { value: `x-component(${name})` });
+  widgetClasses.set(name, cls);
+  return cls;
+}
+
+function firstElementVNode(vnode) {
+  if (!vnode) return null;
+  if (vnode instanceof ElementVNode || vnode instanceof HTMLElementVNode || vnode instanceof RawHTMLVNode) {
+    return vnode;
+  }
+  if (vnode instanceof FragmentVNode) {
+    for (const k of vnode._keys || []) {
+      const found = firstElementVNode(vnode._siblings[k]?.vnode);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function mergeForwardedOnto(root, forwarded, parentScope, parentCtx) {
+  if (!root || !forwarded) return;
+  const attrs = root.attrs || (root.attrs = {});
+
+  for (const [k, v] of Object.entries(forwarded.attrs || {})) {
+    if (k === 'class') mergeClass(attrs, v);
+    else if (k === 'style') mergeStyle(attrs, v);
+    else if (attrs[k] == null) attrs[k] = v;
+  }
+
+  if (forwarded.binds) {
+    for (const b of forwarded.binds) {
+      applyBind(attrs, b.arg || 'value', evaluate(b.expression, parentScope, parentCtx));
+    }
+  }
+
+  if (forwarded.show) {
+    applyShow(attrs, { show: forwarded.show, transition: forwarded.transition }, parentScope, parentCtx);
+  }
+
+  if (forwarded.model) {
+    applyModel(attrs, { tag: root.tag, attrs }, forwarded.model, parentScope, parentCtx);
+  }
+
+  if (forwarded.on) {
+    for (const o of forwarded.on) {
+      const key = eventAttrName(o);
+      const next = makeHandler(o, parentScope, parentCtx);
+      const prev = attrs[key];
+      attrs[key] = prev ? composeHandlers(prev, next) : next;
+    }
+  }
+
+  if (forwarded.ref || forwarded.init || forwarded.effects) {
+    const prevCreate = root.oncreate;
+    const prevRebind = root.rebind;
+    if (forwarded.init || forwarded.effects) {
+      root.rebind = (box) => {
+        prevRebind?.(box);
+        box.parentScope = parentScope;
+        box.parentCtx = parentCtx;
+      };
+    }
+    root.oncreate = (dom) => {
+      prevCreate?.(dom);
+      if (forwarded.ref && parentCtx?.refs) parentCtx.refs[forwarded.ref] = dom;
+      if (!forwarded.init && !forwarded.effects) return;
+      const box = { parentScope, parentCtx: { ...parentCtx, getEl: () => dom } };
+      root._hostBox = box;
+      const stops = [];
+      if (forwarded.init) {
+        queueMicrotask(() =>
+          evaluateAction(forwarded.init.expression, box.parentScope, {
+            ...box.parentCtx,
+            getEl: () => dom,
+          }),
+        );
+      }
+      if (forwarded.effects) {
+        for (const e of forwarded.effects) {
+          stops.push(
+            effect(() =>
+              evaluateAction(e.expression, box.parentScope, {
+                ...box.parentCtx,
+                getEl: () => dom,
+              }),
+            ),
+          );
+        }
+      }
+      const prevCleanup = root._cleanup;
+      root._cleanup = () => {
+        for (const s of stops) s();
+        prevCleanup?.();
+      };
+    };
+  }
+}
+
+function composeHandlers(a, b) {
+  const both = function (e) {
+    if (typeof a === 'function') a(e);
+    if (typeof b === 'function') b(e);
+  };
+  both.toString = () => `${String(a)}+${String(b)}`;
+  both.rebind = (live) => {
+    a.rebind?.(a);
+    b.rebind?.(b);
+    live.toString = both.toString;
+  };
+  if (a.target) both.target = a.target;
+  if (a.opts) both.opts = a.opts;
+  return both;
+}
+
+function buildComponent(ast, scope, ctx) {
+  const name = String(ast.component.expression || '').trim();
+  const def = componentRegistry.get(name);
+  if (!def) {
+    console.warn('[m] unknown x-component', name);
+    return buildElement({ ...ast, component: null }, scope, ctx);
+  }
+
+  const props = collectComponentProps(def, ast, scope, ctx);
+  const forwarded = collectForwarded(def, ast, scope, ctx);
+
+  return ComponentVNode._factory(widgetClassFor(name), {
+    name,
+    def,
+    props,
+    parentScope: scope,
+    slotAst: ast.children,
+    slotCtx: ctx,
+    forwarded,
+  });
 }
 
 // ---------------------------------------------------------------------------

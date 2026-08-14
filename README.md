@@ -2,9 +2,9 @@
 
 A minimalist UI framework with **Alpine-style** `x-*` directives and an **`M.*` API**.
 
-- **Directives** — `x-data`, `x-bind` / `:`, `x-on` / `@`, `x-text`, `x-html`, `x-model`, `x-show`, `x-if`, `x-for`, `x-init`, `x-effect`, `x-ref`, `x-cloak`, `x-ignore`, `x-transition`
+- **Directives** — `x-data`, `x-bind` / `:`, `x-on` / `@`, `x-text`, `x-html`, `x-model`, `x-show`, `x-if`, `x-for`, `x-init`, `x-effect`, `x-ref`, `x-cloak`, `x-ignore`, `x-transition`, `x-mount`, `x-component`
 - **Magics** — `$store`, `$el`, `$refs`, `$dispatch`, `$watch`, `$nextTick`
-- **Methods** — `M.data()`, `M.store()`, `M.start()`, `M.mount()`, `M.redraw()`, …
+- **Methods** — `M.data()`, `M.component()`, `M.store()`, `M.start()`, `M.mount()`, `M.redraw()`, …
 - **Router** — pathname client router (supports a base path for GitHub Pages)
 - **HMR** — Bun dev server + chokidar + WebSocket; named stores survive reloads
 

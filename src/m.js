@@ -8,7 +8,7 @@
  *
  * Directives: x-data, x-bind, x-on, x-text, x-html, x-model, x-show,
  *   x-transition (x-show only), x-for, x-if, x-init, x-effect, x-ref,
- *   x-cloak, x-ignore, x-mount
+ *   x-cloak, x-ignore, x-mount, x-component
  * Magics: $store, $el, $dispatch, $watch, $refs, $nextTick
  * Shorthands: @click → x-on:click, :class → x-bind:class; m-* aliases work.
  */
@@ -27,6 +27,7 @@ import {
 import { parseElement, parseTemplate } from './parse.js';
 import { buildFragment, buildTemplate } from './build.js';
 import {
+  componentRegistry,
   dataRegistry,
   evaluate,
   evaluateAction,
@@ -46,7 +47,7 @@ import {
   takePerfStats,
 } from './reactive.js';
 
-const VERSION = '3.3.0';
+const VERSION = '3.4.0';
 
 export {
   reactive,
@@ -219,6 +220,19 @@ export const M = {
   data(name, factory) {
     dataRegistry.set(name, factory);
     return factory;
+  },
+
+  /**
+   * Register a named widget whose template the callee owns.
+   * Use with `<span x-component="prio" :priority="c.priority"></span>`.
+   *
+   * `def` is either a `{ props, template, ...state }` object (shared proto)
+   * or a factory `(props) => ({ template, ... })` run once per instance.
+   */
+  component(name, def) {
+    if (def === undefined) return componentRegistry.get(name);
+    componentRegistry.set(name, def);
+    return def;
   },
 
   /** Define or read a global store. */

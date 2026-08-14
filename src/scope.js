@@ -13,6 +13,13 @@ import { reactive, effect, afterRender, RAW } from './reactive.js';
 
 export const dataRegistry = new Map();
 
+/** Named x-component widgets: name → definition object or factory. */
+export const componentRegistry = new Map();
+
+export function clearComponentRegistry() {
+  componentRegistry.clear();
+}
+
 const STORE_HMR = '__M_ALPINE_STORES__';
 const localStoreBucket = new Map();
 

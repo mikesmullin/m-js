@@ -407,7 +407,7 @@
   </div>
 </div>
 
-<script id="mjs-runtime" type="text/plain">/*! m.js v3.3.0 | MIT | https://mikesmullin.github.io/m-js/ */
+<script id="mjs-runtime" type="text/plain">/*! m.js v3.4.0 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -1387,7 +1387,8 @@ var DIR_ORDER = [
   "on",
   "effect",
   "cloak",
-  "mount"
+  "mount",
+  "component"
 ];
 function isDir(name) {
   return name.startsWith("x-") || name.startsWith("m-") || name.startsWith("@") || name.startsWith(":") && name.length > 1 && !name.startsWith("::");
@@ -1589,6 +1590,9 @@ function walkNode(el, parentNs, parentPreserveWs) {
         break;
       case "mount":
         node.mount = d;
+        break;
+      case "component":
+        node.component = d;
         break;
       case "cloak":
         node.cloak = true;
@@ -1949,6 +1953,7 @@ function findReactiveRoot(scope) {
 
 // src/scope.js
 var dataRegistry = new Map;
+var componentRegistry = new Map;
 var STORE_HMR = "__M_ALPINE_STORES__";
 var localStoreBucket = new Map;
 function storeBucket() {
@@ -2365,8 +2370,12 @@ function buildNode(ast, scope, ctx) {
     return buildFor(ast, scope, ctx);
   if (ast.if && !evaluate(ast.if.expression, scope, ctx))
     return null;
+  if (ast.tag === "slot")
+    return buildSlot(ast, scope, ctx);
   if (ast.isTemplate)
     return buildFragment(ast.children, scope, ctx);
+  if (ast.component)
+    return buildComponent(ast, scope, ctx);
   if (ast.data)
     return buildDataComponent(ast, scope, ctx);
   if (ast.mount)
@@ -2435,7 +2444,7 @@ function buildFor(ast, scope, ctx) {
       console.warn("[m] duplicate x-for key", key, spec.raw);
       sid = `${base}#${dup}`;
     }
-    const body = ast.isTemplate ? buildFragment(ast.children, rowScope, ctx) : buildElement(ast, rowScope, ctx);
+    const body = ast.isTemplate ? buildFragment(ast.children, rowScope, ctx) : buildRepeatedHost(ast, rowScope, ctx);
     siblings[sid] = body;
   });
   return volatile(siblings);
@@ -2475,6 +2484,317 @@ function normalizeList(list) {
     return Object.entries(list).map(([k, v]) => [v, k]);
   }
   return [];
+}
+function buildRepeatedHost(ast, scope, ctx) {
+  if (ast.component)
+    return buildComponent(ast, scope, ctx);
+  if (ast.data)
+    return buildDataComponent(ast, scope, ctx);
+  if (ast.mount)
+    return buildMount(ast, scope, ctx);
+  return buildElement(ast, scope, ctx);
+}
+var HOST_RESERVED = new Set([
+  "class",
+  "id",
+  "style",
+  "role",
+  "hidden",
+  "tabindex"
+]);
+function isReservedHostAttr(name) {
+  if (!name)
+    return true;
+  if (HOST_RESERVED.has(name))
+    return true;
+  return /^(aria|data)-/.test(name);
+}
+function hasSlotContent(astList) {
+  if (!astList || !astList.length)
+    return false;
+  return astList.some((n) => n.kind !== "text" || n.text && /\S/.test(n.text));
+}
+function buildSlot(ast, scope, ctx) {
+  if (hasSlotContent(ctx?.slotAst)) {
+    return buildFragment(ctx.slotAst, ctx.slotScope ?? scope, ctx.slotCtx ?? ctx);
+  }
+  return buildFragment(ast.children, scope, ctx);
+}
+function declaredProps(def) {
+  if (!def)
+    return null;
+  if (Array.isArray(def.props))
+    return def.props;
+  return null;
+}
+function collectComponentProps(def, ast, scope, ctx) {
+  const declared = declaredProps(typeof def === "function" ? null : def);
+  const names = new Set(declared || []);
+  if (!declared) {
+    for (const k of Object.keys(ast.attrs || {})) {
+      if (!isReservedHostAttr(k))
+        names.add(k);
+    }
+    for (const b of ast.binds || []) {
+      if (b.arg && b.arg !== "class" && b.arg !== "style" && b.arg !== "key") {
+        names.add(b.arg);
+      }
+    }
+  }
+  const props = {};
+  for (const name of names) {
+    const bind2 = (ast.binds || []).find((b) => b.arg === name);
+    if (bind2) {
+      props[name] = evaluate(bind2.expression, scope, ctx);
+    } else if (ast.attrs && Object.prototype.hasOwnProperty.call(ast.attrs, name)) {
+      const raw = ast.attrs[name];
+      props[name] = raw === "" ? true : raw;
+    }
+  }
+  return props;
+}
+function collectForwarded(def, ast, scope, ctx) {
+  const declared = declaredProps(typeof def === "function" ? null : def);
+  const isProp = (name) => declared ? declared.includes(name) : !isReservedHostAttr(name);
+  const attrs = {};
+  for (const [k, v] of Object.entries(ast.attrs || {})) {
+    if (isProp(k))
+      continue;
+    attrs[k] = v;
+  }
+  const binds = [];
+  for (const b of ast.binds || []) {
+    if (!b.arg || b.arg === "key")
+      continue;
+    if (isProp(b.arg))
+      continue;
+    binds.push(b);
+  }
+  return {
+    attrs,
+    binds,
+    on: ast.on ? ast.on.slice() : null,
+    show: ast.show || null,
+    model: ast.model || null,
+    ref: ast.ref || null,
+    init: ast.init || null,
+    effects: ast.effects || null,
+    cloak: ast.cloak || false,
+    transition: ast.transition || null
+  };
+}
+function applyProps(target, props) {
+  if (!target || !props)
+    return;
+  for (const [k, v] of Object.entries(props)) {
+    if (target[k] !== v)
+      target[k] = v;
+  }
+}
+function instantiateWidget(def, props) {
+  let data;
+  if (typeof def === "function") {
+    data = def(props) || {};
+  } else {
+    data = Object.create(def);
+  }
+  applyProps(data, props);
+  return reactive(data);
+}
+function widgetTemplate(def, scope) {
+  if (scope?.template)
+    return scope.template;
+  if (def && typeof def === "object" && def.template)
+    return def.template;
+  return "";
+}
+var widgetClasses = new Map;
+function widgetClassFor(name) {
+  let cls = widgetClasses.get(name);
+  if (cls)
+    return cls;
+  cls = class WidgetComponent extends Component {
+    oninit() {
+      this.refs = {};
+      this.ctx = {
+        refs: this.refs,
+        getEl: () => this.rootDom
+      };
+      const def = componentRegistry.get(this.attrs.name) ?? this.attrs.def;
+      this.scope = instantiateWidget(def, this.attrs.props);
+      this.syncSlotCtx();
+      if (typeof this.scope.init === "function") {
+        queueMicrotask(() => {
+          try {
+            this.scope.init();
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      }
+    }
+    syncSlotCtx() {
+      this.ctx.slotAst = this.attrs.slotAst;
+      this.ctx.slotScope = this.attrs.parentScope;
+      this.ctx.slotCtx = this.attrs.slotCtx;
+    }
+    onbeforeupdate() {
+      applyProps(this.scope, this.attrs.props);
+      this.syncSlotCtx();
+    }
+    view() {
+      this.syncSlotCtx();
+      const def = componentRegistry.get(this.attrs.name) ?? this.attrs.def;
+      const html = widgetTemplate(def, this.scope);
+      const tree = buildTemplate(html, this.scope, this.ctx);
+      const root = firstElementVNode(tree);
+      if (root) {
+        mergeForwardedOnto(root, this.attrs.forwarded, this.attrs.parentScope, this.attrs.slotCtx);
+        const prev = root.oncreate;
+        root.oncreate = (dom) => {
+          this.rootDom = dom;
+          prev?.(dom);
+        };
+      }
+      return tree;
+    }
+    onremove() {
+      if (typeof this.scope?.destroy === "function") {
+        try {
+          this.scope.destroy();
+        } catch (_) {}
+      }
+    }
+  };
+  Object.defineProperty(cls, "name", { value: `x-component(${name})` });
+  widgetClasses.set(name, cls);
+  return cls;
+}
+function firstElementVNode(vnode) {
+  if (!vnode)
+    return null;
+  if (vnode instanceof ElementVNode || vnode instanceof HTMLElementVNode || vnode instanceof RawHTMLVNode) {
+    return vnode;
+  }
+  if (vnode instanceof FragmentVNode) {
+    for (const k of vnode._keys || []) {
+      const found = firstElementVNode(vnode._siblings[k]?.vnode);
+      if (found)
+        return found;
+    }
+  }
+  return null;
+}
+function mergeForwardedOnto(root, forwarded, parentScope, parentCtx) {
+  if (!root || !forwarded)
+    return;
+  const attrs = root.attrs || (root.attrs = {});
+  for (const [k, v] of Object.entries(forwarded.attrs || {})) {
+    if (k === "class")
+      mergeClass(attrs, v);
+    else if (k === "style")
+      mergeStyle(attrs, v);
+    else if (attrs[k] == null)
+      attrs[k] = v;
+  }
+  if (forwarded.binds) {
+    for (const b of forwarded.binds) {
+      applyBind(attrs, b.arg || "value", evaluate(b.expression, parentScope, parentCtx));
+    }
+  }
+  if (forwarded.show) {
+    applyShow(attrs, { show: forwarded.show, transition: forwarded.transition }, parentScope, parentCtx);
+  }
+  if (forwarded.model) {
+    applyModel(attrs, { tag: root.tag, attrs }, forwarded.model, parentScope, parentCtx);
+  }
+  if (forwarded.on) {
+    for (const o of forwarded.on) {
+      const key = eventAttrName(o);
+      const next = makeHandler(o, parentScope, parentCtx);
+      const prev = attrs[key];
+      attrs[key] = prev ? composeHandlers(prev, next) : next;
+    }
+  }
+  if (forwarded.ref || forwarded.init || forwarded.effects) {
+    const prevCreate = root.oncreate;
+    const prevRebind = root.rebind;
+    if (forwarded.init || forwarded.effects) {
+      root.rebind = (box) => {
+        prevRebind?.(box);
+        box.parentScope = parentScope;
+        box.parentCtx = parentCtx;
+      };
+    }
+    root.oncreate = (dom) => {
+      prevCreate?.(dom);
+      if (forwarded.ref && parentCtx?.refs)
+        parentCtx.refs[forwarded.ref] = dom;
+      if (!forwarded.init && !forwarded.effects)
+        return;
+      const box = { parentScope, parentCtx: { ...parentCtx, getEl: () => dom } };
+      root._hostBox = box;
+      const stops = [];
+      if (forwarded.init) {
+        queueMicrotask(() => evaluateAction(forwarded.init.expression, box.parentScope, {
+          ...box.parentCtx,
+          getEl: () => dom
+        }));
+      }
+      if (forwarded.effects) {
+        for (const e of forwarded.effects) {
+          stops.push(effect(() => evaluateAction(e.expression, box.parentScope, {
+            ...box.parentCtx,
+            getEl: () => dom
+          })));
+        }
+      }
+      const prevCleanup = root._cleanup;
+      root._cleanup = () => {
+        for (const s of stops)
+          s();
+        prevCleanup?.();
+      };
+    };
+  }
+}
+function composeHandlers(a, b) {
+  const both = function(e) {
+    if (typeof a === "function")
+      a(e);
+    if (typeof b === "function")
+      b(e);
+  };
+  both.toString = () => `${String(a)}+${String(b)}`;
+  both.rebind = (live) => {
+    a.rebind?.(a);
+    b.rebind?.(b);
+    live.toString = both.toString;
+  };
+  if (a.target)
+    both.target = a.target;
+  if (a.opts)
+    both.opts = a.opts;
+  return both;
+}
+function buildComponent(ast, scope, ctx) {
+  const name = String(ast.component.expression || "").trim();
+  const def = componentRegistry.get(name);
+  if (!def) {
+    console.warn("[m] unknown x-component", name);
+    return buildElement({ ...ast, component: null }, scope, ctx);
+  }
+  const props = collectComponentProps(def, ast, scope, ctx);
+  const forwarded = collectForwarded(def, ast, scope, ctx);
+  return ComponentVNode._factory(widgetClassFor(name), {
+    name,
+    def,
+    props,
+    parentScope: scope,
+    slotAst: ast.children,
+    slotCtx: ctx,
+    forwarded
+  });
 }
 function componentClassFor(ast) {
   if (ast._cls)
@@ -2659,7 +2979,7 @@ function attachLifecycle(vnode, ast, scope, ctx) {
 }
 
 // src/m.js
-var VERSION = "3.3.0";
+var VERSION = "3.4.0";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;
@@ -2782,6 +3102,12 @@ var M = {
   data(name, factory) {
     dataRegistry.set(name, factory);
     return factory;
+  },
+  component(name, def) {
+    if (def === undefined)
+      return componentRegistry.get(name);
+    componentRegistry.set(name, def);
+    return def;
   },
   store(name, value) {
     const bucket = storeBucket();
@@ -3116,7 +3442,7 @@ const ITEMS = [
   hideHead: true,
   custom: `
   <header class="hero">
-    <p class="kicker">m.js · v3.3.0</p>
+    <p class="kicker">m.js · v3.4.0</p>
     <h1 class="hero-title"><span class="grad">Minimalist UI</span><br>for the modern web</h1>
     <p class="hero-sub">
       Alpine-style <code>x-*</code> directives, <code>$store</code>, a client Router and hot
@@ -4188,6 +4514,80 @@ const input = HTMLElementVNode.factory('input', …)
 },
 
 {
+  id: 'x-component', kind: 'attribute', group: 'Attributes', sec: 'API reference', status: 'extended', name: 'x-component',
+  tagline: 'Invoke a registered widget by name. The callee owns the markup; the host only passes props.',
+  alpine: `<!-- Alpine has no equivalent. x-data injects a scope;
+the caller still types the HTML every time. -->
+<div x-data="dropdown">
+  <button @click="toggle()">…</button>
+</div>`,
+  v2: `// the unit is a function of attrs → vnode
+m(Button, { color: 'primary', label: 'Send', onclick: send })
+m(PriorityIcon, { priority: c.priority })`,
+  v2note: 'v2 composition is one call. v3\'s x-data cannot do that — it has no template of its own. x-component restores the call form inside a template string.',
+  v3: `<span x-component="prio" :priority="c.priority"></span>
+<span x-component="uiButton" variant="primary" @click="send()">Send</span>`,
+  v3note: 'Props are evaluated in the <em>parent</em> scope — including x-for row locals — then patched onto the instance. The host element is replaced by the widget\'s template root.',
+  notes: { kind: 'info', title: 'How it is different from x-data and x-mount', items: [
+    '<code>x-data</code> is a <strong>scope</strong>. The markup stays at the call site. Nested <code>x-data</code> inside <code>x-for</code> cannot see row locals.',
+    '<code>x-mount</code> nests a <code>{ template, … }</code> object already held in state. It is the right tool for page-sized children (<code>Shell → page</code>). A new object identity remounts.',
+    '<code>x-component="name"</code> looks the name up in <code>M.component</code>. The widget owns its template. Bound attrs (<code>:priority="c.priority"</code>) are evaluated against the parent — that is how a list row can pass <code>c</code> without the x-for hole.',
+    'The host is <strong>replaced</strong> by the widget root (no wrapper). Leftover host attrs, <code>:class</code>, <code>x-show</code> and <code>@click</code> are forwarded onto that root. Host children fill a <code>&lt;slot&gt;</code>.',
+    'Declare <code>props: [\'priority\']</code> so only those names become instance fields. Everything else on the host is forwarded. An empty static attribute (<code>disabled</code>) becomes <code>true</code>.',
+    'The instance is a <code>ComponentVNode</code> keyed by AST position / <code>:key</code>. Updating a prop does not remount; <code>init()</code> runs once.',
+    '<code>m-component</code> is an alias.'
+  ]},
+  why: 'A component library is a function of attrs → view. Without a call form, every compound widget re-types the primitive HTML and improvements never inherit. This is the Alpine-shaped spelling of v2\'s <code>m(Name, attrs)</code>.',
+  examples: [
+    { lbl: 'One definition, many call sites', say: 'Change the chip once. Every span x-component="prio" inherits it — including the ones inside the list.', src:
+`<script>
+  const META = {
+    p1: { short: 'P1', color: '#ef4444' },
+    p2: { short: 'P2', color: '#f97316' },
+    p3: { short: 'P3', color: '#eab308' },
+  }
+  M.component('prio', {
+    props: ['priority'],
+    priority: 'p3',
+    get meta() { return META[this.priority] || META.p3 },
+    template: \`<span class="tag" :style="'outline-color:'+meta.color" x-text="meta.short"></span>\`
+  })
+<\/script>
+
+<div x-data="{ items: [
+  {id:1, priority:'p1', title:'checkout'},
+  {id:2, priority:'p2', title:'webhooks'},
+  {id:3, priority:'p3', title:'replica lag'}
+]}">
+  <div class="box" x-for="c in items" :key="c.id">
+    <span x-component="prio" :priority="c.priority"></span>
+    <span x-text="c.title"></span>
+  </div>
+</div>` },
+    { lbl: 'Slots + host events — a reusable button', say: 'The widget owns .btn. The host only says variant, disabled, and what happens on click.', src:
+`<script>
+  M.component('uiButton', {
+    props: ['variant', 'disabled', 'label'],
+    variant: '',
+    disabled: false,
+    label: '',
+    template: \`<button type="button" class="btn" :class="variant" :disabled="disabled">
+      <span x-show="label" x-text="label"></span>
+      <slot></slot>
+    </button>\`
+  })
+<\/script>
+
+<div x-data="{ n: 0, busy: false }">
+  <span x-component="uiButton" variant="primary" @click="n++">clicked <span x-text="n"></span>×</span>
+  <span x-component="uiButton" :disabled="busy" @click="busy = !busy">
+    <span x-text="busy ? 'Busy…' : 'Toggle busy'"></span>
+  </span>
+</div>` }
+  ]
+},
+
+{
   id: '$store', kind: 'property', group: 'Properties', sec: 'API reference', status: 'parity', name: '$store',
   tagline: 'Read global reactive state from any expression.',
   alpine: `<h1 x-text="$store.site.title"></h1>
@@ -4576,6 +4976,80 @@ M.data('dropdown', (start = false) => ({
 },
 
 {
+  id: 'M.component', kind: 'method', group: 'Methods', sec: 'API reference', status: 'extended', name: 'M.component',
+  tagline: 'Register a named widget that owns its template, then invoke it with <code>x-component</code>.',
+  alpine: `// Alpine.data is scope-only — there is no
+// "this component's markup" to register.`,
+  v2: `class Button extends Component {
+  view() {
+    return m('button.btn', this.attrs, this.attrs.label)
+  }
+}
+m(Button, { label: 'Send', color: 'primary' })`,
+  v2note: 'v2 registered a class and called it with m(). v3 registers a definition object (or factory) and calls it from a template.',
+  v3: `M.component('uiButton', {
+  props: ['variant', 'label', 'disabled'],
+  variant: '',
+  label: '',
+  disabled: false,
+  template: \`<button type="button" class="btn"
+              :class="variant" :disabled="disabled"
+              x-text="label"></button>\`
+})
+
+// later, anywhere:
+<span x-component="uiButton" variant="primary" label="Send"></span>`,
+  v3note: 'Object form shares the definition as a prototype (getters and methods live once). Factory form <code>(props) => ({ template, … })</code> runs once per instance — use it when the widget has local state.',
+  notes: { kind: 'info', title: 'Notes', items: [
+    '<code>M.component(name, def)</code> writes the registry; <code>M.component(name)</code> reads it back.',
+    '<code>props</code> lists the names copied from the host. Bound values (<code>:priority="c.priority"</code>) are evaluated in the parent scope on every redraw and patched onto the instance — <code>init()</code> is not re-run.',
+    'An <code>init()</code> method runs once after mount; <code>destroy()</code> when the instance is removed.',
+    'Re-registering the same name (HMR) updates the template for the next view. Existing instances keep their state.',
+    'This is not v2\'s <code>M.component(Class, attrs)</code> hyperscript call. The v3 spelling is the registry; the call site is the <code>x-component</code> directive.'
+  ]},
+  why: 'x-data reused behaviour. x-component reuses markup. A 100-widget catalog is only possible if changing Button once updates every Composer, Dialog and Toolbar that invokes it.',
+  examples: [
+    { lbl: 'Object form with a getter', say: 'meta is computed from the priority prop. Flip the buttons and the chip restyles without remounting.', src:
+`<script>
+  M.component('prio', {
+    props: ['priority'],
+    priority: 'p2',
+    get meta() {
+      return {
+        p1: { s: 'P1', c: '#ef4444' },
+        p2: { s: 'P2', c: '#f97316' },
+        p3: { s: 'P3', c: '#eab308' },
+      }[this.priority]
+    },
+    template: \`<span class="tag" :style="'outline-color:'+meta.c" x-text="meta.s"></span>\`
+  })
+<\/script>
+
+<div x-data="{ p: 'p2' }">
+  <button @click="p = 'p1'">P1</button>
+  <button @click="p = 'p2'">P2</button>
+  <button @click="p = 'p3'">P3</button>
+  <div class="box on">
+    current: <span x-component="prio" :priority="p"></span>
+  </div>
+</div>` },
+    { lbl: 'Factory form — local state per instance', say: 'Two independent counters from one registration.', src:
+`<script>
+  M.component('tally', () => ({
+    n: 0,
+    inc() { this.n++ },
+    template: \`<button type="button" @click="inc()">
+      <span x-text="n"></span> clicks
+    </button>\`
+  }))
+<\/script>
+
+<div class="box"><span x-component="tally"></span></div>
+<div class="box"><span x-component="tally"></span></div>` }
+  ]
+},
+
+{
   id: 'M.store', kind: 'method', group: 'Methods', sec: 'API reference', status: 'parity', name: 'M.store',
   tagline: 'Declare global reactive state, readable anywhere via <code>$store</code>.',
   alpine: `<button @click="$store.notifications.notify('…')">
@@ -4848,6 +5322,13 @@ M.mount('#app')          // factory defaults to Router.render
       the docs layout injects the current page into its shell.</div>
     </div>
     <div class="panel v3">
+      <header><span class="who"><span class="tick"></span>x-component — named widgets that own their markup</span></header>
+      ${code(`M.component('prio', { props: ['priority'], template: '…' })
+<span x-component="prio" :priority="c.priority"></span>`)}
+      <div class="foot">The Alpine-shaped spelling of v2\'s <code>m(Name, attrs)</code>. Props evaluate in the parent
+      (list-safe). Compound templates invoke primitives instead of copying their HTML.</div>
+    </div>
+    <div class="panel v3">
       <header><span class="who"><span class="tick"></span>Redraw control &amp; instrumentation</span></header>
       ${code(`M.redraw()               // synchronous diff
 M.deferredBatchRedraw()  // coalesced to one per frame
@@ -4912,6 +5393,8 @@ M.takePerfStats()        // { flushes, effects, redraws }`, 'js')}
       <li><b>Foreign-target listeners are tracked and torn down</b> when the element is removed.</li>
       <li><b><code>@window.resize</code></b> accepted alongside <code>@resize.window</code>.</li>
       <li><b>A root component / Router / HMR layer</b> that Alpine leaves entirely to you.</li>
+      <li><b><code>x-component</code> / <code>M.component</code></b> — a widget owns its template and is invoked by
+      name with bound props. Alpine's <code>x-data</code> only injects a scope; the caller still types the HTML.</li>
     </ul>
   </div>`
 }

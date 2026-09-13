@@ -56,6 +56,24 @@ const insertion = (parent, vnode, dom, nextSibling) => {
  * A minimal document object with no parent, holding a segment of tree
  * structure. Siblings are keyed so reorders and hide/show are detectable.
  */
+
+/**
+ * The first real DOM node a vnode renders to (element/text), descending
+ * through nested fragments and component wrappers. Used to physically move a
+ * fragment's DOM during a reorder (see FragmentVNode._insert).
+ */
+const rootDom = (vnode) => {
+  for (let v = vnode; v; ) {
+    if (v.dom) return v.dom;
+    const next =
+      v._vnode ||
+      (v._keys && v._keys.length ? v._siblings[v._keys[0]].vnode : null);
+    if (!next) return null;
+    v = next;
+  }
+  return null;
+};
+
 export class FragmentVNode {
   static _empty(f) {
     if (f instanceof FragmentVNode) return f;
@@ -99,7 +117,22 @@ export class FragmentVNode {
     this._create();
   }
 
-  _insert(parent, old, nextSibling) {}
+  _insert(parent, old, nextSibling) {
+    // A fragment has no single .dom; move every top-level DOM node it manages
+    // (e.g. each <li>/<tr> under a <template x-for>) before nextSibling so an
+    // order-only change actually reorders the DOM. Forward order preserves the
+    // fragment's internal layout.
+    //
+    // The *new* fragment's children have no .dom yet — it is assigned during the
+    // _recurse that runs right after this _insert. The live DOM nodes currently
+    // in the tree are the *old* fragment's, so source them from `old`.
+    const src = old && old._keys && old._keys.length ? old : this;
+    const n = nextSibling ?? null;
+    for (const sid of src._keys) {
+      const dom = rootDom(src._siblings[sid].vnode);
+      if (dom && dom.parentNode === parent) parent.insertBefore(dom, n);
+    }
+  }
 
   _recurse(parent, old, nextSibling) {
     updateNodes(parent, old, this, nextSibling);

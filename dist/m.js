@@ -361,6 +361,17 @@ var insertion = (parent, vnode, dom, nextSibling) => {
   }
   parent.insertBefore(dom, nextSibling ?? null);
 };
+var rootDom = (vnode) => {
+  for (let v = vnode;v; ) {
+    if (v.dom)
+      return v.dom;
+    const next = v._vnode || (v._keys && v._keys.length ? v._siblings[v._keys[0]].vnode : null);
+    if (!next)
+      return null;
+    v = next;
+  }
+  return null;
+};
 
 class FragmentVNode {
   static _empty(f) {
@@ -403,7 +414,15 @@ class FragmentVNode {
   _update() {
     this._create();
   }
-  _insert(parent, old, nextSibling) {}
+  _insert(parent, old, nextSibling) {
+    const src = old && old._keys && old._keys.length ? old : this;
+    const n = nextSibling ?? null;
+    for (const sid of src._keys) {
+      const dom = rootDom(src._siblings[sid].vnode);
+      if (dom && dom.parentNode === parent)
+        parent.insertBefore(dom, n);
+    }
+  }
   _recurse(parent, old, nextSibling) {
     updateNodes(parent, old, this, nextSibling);
   }

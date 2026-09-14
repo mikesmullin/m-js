@@ -18,6 +18,15 @@ export const proxyMap = new WeakMap();
 /** raw object → cached bound methods */
 const boundMethodCache = new WeakMap();
 
+/** Like fn.bind(self), but a Proxy so own keys (`.invert`, `.domain`, …) remain. */
+function bindMethod(fn, self) {
+  return new Proxy(fn, {
+    apply(_target, _thisArg, args) {
+      return Reflect.apply(fn, self, args);
+    },
+  });
+}
+
 let activeEffect = null;
 const deps = new WeakMap();
 
@@ -248,9 +257,11 @@ export function reactive(target) {
       track(obj, key);
       const val = Reflect.get(obj, key, receiver);
       // Bind methods once and cache (avoid new function identity every get).
-      // Always bind to *this* reactive proxy — not `receiver`. Nested scopes
-      // use Object.create(proxy); binding to receiver would make `this.foo = …`
-      // write onto the child scope instead of the store.
+      // Always call with *this* = the reactive proxy — not `receiver`. Nested
+      // scopes use Object.create(proxy); binding to receiver would make
+      // `this.foo = …` write onto the child scope instead of the store.
+      // A function Proxy (not fn.bind) so extra keys like d3-style `.invert`
+      // survive; bind() strips them.
       if (
         typeof val === 'function' &&
         Object.prototype.hasOwnProperty.call(obj, key)
@@ -260,7 +271,7 @@ export function reactive(target) {
           cache = new Map();
           boundMethodCache.set(obj, cache);
         }
-        if (!cache.has(key)) cache.set(key, val.bind(proxy));
+        if (!cache.has(key)) cache.set(key, bindMethod(val, proxy));
         return cache.get(key);
       }
       if (canReactive(val)) return reactive(val);

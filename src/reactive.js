@@ -118,6 +118,29 @@ function track(target, key) {
   activeEffect._deps?.add(set);
 }
 
+function previewVal(v) {
+  if (v == null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return '[array ' + v.length + ']';
+  return '{obj}';
+}
+
+function traceReactiveWrite(key, prev, next) {
+  const g = typeof globalThis !== 'undefined' ? globalThis : null;
+  if (!g || !g.__M_WRITE_TRACE__) return;
+  const buf = (g.__M_WRITES__ ||= []);
+  let prevS = '?';
+  let nextS = '?';
+  try { prevS = previewVal(prev); } catch {}
+  try { nextS = previewVal(next); } catch {}
+  buf.push({
+    key: typeof key === 'symbol' ? String(key) : key,
+    prev: prevS,
+    next: nextS,
+    stack: (new Error().stack || '').split('\n').slice(2, 12),
+  });
+  if (buf.length > 40) buf.shift();
+}
+
 function trigger(target, key) {
   for (const fn of invalidationListeners) fn();
   const byKey = deps.get(target);
@@ -258,7 +281,10 @@ export function reactive(target) {
       if (typeof value === 'function' || typeof prev === 'function') {
         boundMethodCache.get(obj)?.delete(key);
       }
-      if (!Object.is(prev, rawNext)) trigger(obj, key);
+      if (!Object.is(prev, rawNext)) {
+        traceReactiveWrite(key, prev, rawNext);
+        trigger(obj, key);
+      }
       if (!had && !Array.isArray(obj)) trigger(obj, ITERATE_KEY);
       // Setting arr[i] auto-updates .length without a separate [[Set]].
       if (Array.isArray(obj) && prevLen !== null && obj.length !== prevLen) {

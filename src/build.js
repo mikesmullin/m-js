@@ -548,8 +548,13 @@ function collectForwarded(def, ast, scope, ctx) {
 
 function applyProps(target, props) {
   if (!target || !props) return;
+  // Compare against the raw object. Reading `target[k]` on a reactive widget
+  // re-binds own function props (`fn.bind(child)`), so a parent callback
+  // never `===` the value the getter returns — applyProps would write every
+  // redraw, trigger onInvalidate, and hot-loop.
+  const raw = target[RAW] || target;
   for (const [k, v] of Object.entries(props)) {
-    if (target[k] !== v) target[k] = v;
+    if (raw[k] !== v) target[k] = v;
   }
 }
 

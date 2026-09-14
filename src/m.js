@@ -74,6 +74,50 @@ let alreadyRedrawing = false;
 let deferredBatchRedraw = false;
 let deferredQueued = false;
 
+// Debug throttle: `window.__M_REDRAW_CAP__ = 4` → at most 4 redraws/sec.
+// Excess calls are dropped; one trailing redraw is scheduled so the latest
+// state still paints. Unset / 0 / NaN = unlimited (production default).
+let lastRedrawAt = 0;
+let trailingRedrawTimer = 0;
+let redrawsDropped = 0;
+
+function redrawCap() {
+  const g = typeof globalThis !== 'undefined' ? globalThis : null;
+  const n = g ? Number(g.__M_REDRAW_CAP__) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function noteRedrawDropped() {
+  redrawsDropped++;
+  const g = typeof globalThis !== 'undefined' ? globalThis : null;
+  if (g) g.__M_REDRAW_DROPPED__ = redrawsDropped;
+}
+
+function scheduleTrailingRedraw(waitMs) {
+  if (trailingRedrawTimer) return;
+  trailingRedrawTimer = setTimeout(() => {
+    trailingRedrawTimer = 0;
+    M.redraw();
+  }, Math.max(0, waitMs));
+}
+
+function consumeRedrawSlot() {
+  const cap = redrawCap();
+  if (!cap) return true;
+  const now =
+    typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now();
+  const minInterval = 1000 / cap;
+  if (now - lastRedrawAt >= minInterval) {
+    lastRedrawAt = now;
+    return true;
+  }
+  noteRedrawDropped();
+  scheduleTrailingRedraw(minInterval - (now - lastRedrawAt));
+  return false;
+}
+
 /** Extra mount points created by initTree() (progressive enhancement). */
 const mounts = new Set();
 
@@ -323,6 +367,7 @@ export const M = {
       deferredBatchRedraw = true;
       return;
     }
+    if (!consumeRedrawSlot()) return;
     alreadyRedrawing = true;
     try {
       performRedraw();
@@ -365,6 +410,9 @@ export const M = {
   },
   get refreshCount() {
     return refreshRequestCount;
+  },
+  get redrawsDropped() {
+    return redrawsDropped;
   },
   /** @deprecated use takePerfStats().flushes */
   get drawCallCount() {

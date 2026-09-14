@@ -118,6 +118,28 @@ const isWhitespaceOnly = (s) => !/[^\t\n\f\r ]/.test(s);
 
 const NS_BY_TAG = { svg: SVG_NS, math: MATHML_NS };
 
+// HTML's parser lowercases SVG tag names; createElementNS needs the SVG
+// camelCase or gradients/filters (linearGradient, feGaussianBlur, …) are
+// unknown elements and url(#id) paints nothing.
+const SVG_CAMEL = {
+  altglyph: 'altGlyph', altglyphdef: 'altGlyphDef', altglyphitem: 'altGlyphItem',
+  animatecolor: 'animateColor', animatemotion: 'animateMotion',
+  animatetransform: 'animateTransform', clippath: 'clipPath',
+  feblend: 'feBlend', fecolormatrix: 'feColorMatrix',
+  fecomponenttransfer: 'feComponentTransfer', fecomposite: 'feComposite',
+  feconvolvematrix: 'feConvolveMatrix', fediffuselighting: 'feDiffuseLighting',
+  fedisplacementmap: 'feDisplacementMap', fedistantlight: 'feDistantLight',
+  fedropshadow: 'feDropShadow', feflood: 'feFlood',
+  fefunca: 'feFuncA', fefuncb: 'feFuncB', fefuncg: 'feFuncG', fefuncr: 'feFuncR',
+  fegaussianblur: 'feGaussianBlur', feimage: 'feImage', femerge: 'feMerge',
+  femergenode: 'feMergeNode', femorphology: 'feMorphology', feoffset: 'feOffset',
+  fepointlight: 'fePointLight', fespecularlighting: 'feSpecularLighting',
+  fespotlight: 'feSpotLight', fetile: 'feTile', feturbulence: 'feTurbulence',
+  foreignobject: 'foreignObject', glyphref: 'glyphRef',
+  lineargradient: 'linearGradient', radialgradient: 'radialGradient',
+  textpath: 'textPath',
+};
+
 const cache = new Map();
 
 /**
@@ -149,8 +171,9 @@ export function parseElement(el) {
 }
 
 function childNodesOf(node) {
-  // <template> children live in .content, not .childNodes. Missing this makes
-  // every <template x-for> / <template x-if> look empty.
+  // HTML <template> children live in .content. An SVG <template> (HTML foreign
+  // content does not switch out of SVG for this tag) has no .content — its
+  // children sit on childNodes and stay in the SVG namespace.
   if (node.tagName === 'TEMPLATE' && node.content) return node.content.childNodes;
   return node.childNodes;
 }
@@ -210,8 +233,10 @@ function walkNode(el, parentNs, parentPreserveWs) {
   const node = {
     kind: 'el',
     ns,
-    tag: lower,
-    isTemplate: tagName === 'TEMPLATE',
+    tag: ns === SVG_NS ? (SVG_CAMEL[lower] || lower) : lower,
+    // HTML <template> is TEMPLATE; SVG <template> is 'template'. Both are
+    // fragments: the tag is not emitted, only its children.
+    isTemplate: lower === 'template',
     attrs,
     dirs,
     children: [],

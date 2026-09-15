@@ -1,4 +1,4 @@
-/*! m.js v3.4.0 | MIT | https://mikesmullin.github.io/m-js/ */
+/*! m.js v3.5.0 | MIT | https://mikesmullin.github.io/m-js/ */
 
 // src/router.js
 var RX_ABSOLUTE_URL = /^(?:\w{1,99}:)?\/\//;
@@ -1085,6 +1085,45 @@ var INLINE = new Set([
 var PRESERVE_WS = new Set(["PRE", "TEXTAREA"]);
 var isWhitespaceOnly = (s) => !/[^\t\n\f\r ]/.test(s);
 var NS_BY_TAG = { svg: SVG_NS, math: MATHML_NS };
+var SVG_CAMEL = {
+  altglyph: "altGlyph",
+  altglyphdef: "altGlyphDef",
+  altglyphitem: "altGlyphItem",
+  animatecolor: "animateColor",
+  animatemotion: "animateMotion",
+  animatetransform: "animateTransform",
+  clippath: "clipPath",
+  feblend: "feBlend",
+  fecolormatrix: "feColorMatrix",
+  fecomponenttransfer: "feComponentTransfer",
+  fecomposite: "feComposite",
+  feconvolvematrix: "feConvolveMatrix",
+  fediffuselighting: "feDiffuseLighting",
+  fedisplacementmap: "feDisplacementMap",
+  fedistantlight: "feDistantLight",
+  fedropshadow: "feDropShadow",
+  feflood: "feFlood",
+  fefunca: "feFuncA",
+  fefuncb: "feFuncB",
+  fefuncg: "feFuncG",
+  fefuncr: "feFuncR",
+  fegaussianblur: "feGaussianBlur",
+  feimage: "feImage",
+  femerge: "feMerge",
+  femergenode: "feMergeNode",
+  femorphology: "feMorphology",
+  feoffset: "feOffset",
+  fepointlight: "fePointLight",
+  fespecularlighting: "feSpecularLighting",
+  fespotlight: "feSpotLight",
+  fetile: "feTile",
+  feturbulence: "feTurbulence",
+  foreignobject: "foreignObject",
+  glyphref: "glyphRef",
+  lineargradient: "linearGradient",
+  radialgradient: "radialGradient",
+  textpath: "textPath"
+};
 var cache = new Map;
 function parseTemplate(html) {
   const key = html ?? "";
@@ -1157,8 +1196,8 @@ function walkNode(el, parentNs, parentPreserveWs) {
   const node = {
     kind: "el",
     ns,
-    tag: lower,
-    isTemplate: tagName === "TEMPLATE",
+    tag: ns === SVG_NS ? SVG_CAMEL[lower] || lower : lower,
+    isTemplate: lower === "template",
     attrs,
     dirs,
     children: []
@@ -1285,6 +1324,13 @@ var RAW = Symbol("m.raw");
 var ITERATE_KEY = Symbol("m.iterate");
 var proxyMap = new WeakMap;
 var boundMethodCache = new WeakMap;
+function bindMethod(fn, self) {
+  return new Proxy(fn, {
+    apply(_target, _thisArg, args) {
+      return Reflect.apply(fn, self, args);
+    }
+  });
+}
 var activeEffect = null;
 var deps = new WeakMap;
 var queued = new Set;
@@ -1358,6 +1404,36 @@ function track(target, key) {
   }
   set.add(activeEffect);
   activeEffect._deps?.add(set);
+}
+function previewVal(v) {
+  if (v == null || typeof v !== "object")
+    return v;
+  if (Array.isArray(v))
+    return "[array " + v.length + "]";
+  return "{obj}";
+}
+function traceReactiveWrite(key, prev, next) {
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  if (!g || !g.__M_WRITE_TRACE__)
+    return;
+  const buf = g.__M_WRITES__ ||= [];
+  let prevS = "?";
+  let nextS = "?";
+  try {
+    prevS = previewVal(prev);
+  } catch {}
+  try {
+    nextS = previewVal(next);
+  } catch {}
+  buf.push({
+    key: typeof key === "symbol" ? String(key) : key,
+    prev: prevS,
+    next: nextS,
+    stack: (new Error().stack || "").split(`
+`).slice(2, 12)
+  });
+  if (buf.length > 40)
+    buf.shift();
 }
 function trigger(target, key) {
   for (const fn of invalidationListeners)
@@ -1473,7 +1549,7 @@ function reactive(target) {
           boundMethodCache.set(obj, cache2);
         }
         if (!cache2.has(key))
-          cache2.set(key, val.bind(proxy));
+          cache2.set(key, bindMethod(val, proxy));
         return cache2.get(key);
       }
       if (canReactive(val))
@@ -1490,8 +1566,10 @@ function reactive(target) {
       if (typeof value === "function" || typeof prev === "function") {
         boundMethodCache.get(obj)?.delete(key);
       }
-      if (!Object.is(prev, rawNext))
+      if (!Object.is(prev, rawNext)) {
+        traceReactiveWrite(key, prev, rawNext);
         trigger(obj, key);
+      }
       if (!had && !Array.isArray(obj))
         trigger(obj, ITERATE_KEY);
       if (Array.isArray(obj) && prevLen !== null && obj.length !== prevLen) {
@@ -2196,8 +2274,9 @@ function collectForwarded(def, ast, scope, ctx) {
 function applyProps(target, props) {
   if (!target || !props)
     return;
+  const raw = target[RAW] || target;
   for (const [k, v] of Object.entries(props)) {
-    if (target[k] !== v)
+    if (raw[k] !== v)
       target[k] = v;
   }
 }
@@ -2589,7 +2668,7 @@ function attachLifecycle(vnode, ast, scope, ctx) {
 }
 
 // src/m.js
-var VERSION = "3.4.0";
+var VERSION = "3.5.0";
 var rootEl = null;
 var rootFactory = null;
 var rootInstance = null;
@@ -2600,6 +2679,42 @@ var refreshRequestCount = 0;
 var alreadyRedrawing = false;
 var deferredBatchRedraw = false;
 var deferredQueued = false;
+var lastRedrawAt = 0;
+var trailingRedrawTimer = 0;
+var redrawsDropped = 0;
+function redrawCap() {
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  const n = g ? Number(g.__M_REDRAW_CAP__) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function noteRedrawDropped() {
+  redrawsDropped++;
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  if (g)
+    g.__M_REDRAW_DROPPED__ = redrawsDropped;
+}
+function scheduleTrailingRedraw(waitMs) {
+  if (trailingRedrawTimer)
+    return;
+  trailingRedrawTimer = setTimeout(() => {
+    trailingRedrawTimer = 0;
+    M.redraw();
+  }, Math.max(0, waitMs));
+}
+function consumeRedrawSlot() {
+  const cap = redrawCap();
+  if (!cap)
+    return true;
+  const now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+  const minInterval = 1000 / cap;
+  if (now - lastRedrawAt >= minInterval) {
+    lastRedrawAt = now;
+    return true;
+  }
+  noteRedrawDropped();
+  scheduleTrailingRedraw(minInterval - (now - lastRedrawAt));
+  return false;
+}
 var mounts = new Set;
 function instantiate(configOrFactory, attrs = {}) {
   let config = typeof configOrFactory === "function" ? configOrFactory(attrs) : configOrFactory;
@@ -2788,6 +2903,8 @@ var M = {
       deferredBatchRedraw = true;
       return;
     }
+    if (!consumeRedrawSlot())
+      return;
     alreadyRedrawing = true;
     try {
       performRedraw();
@@ -2823,6 +2940,9 @@ var M = {
   },
   get refreshCount() {
     return refreshRequestCount;
+  },
+  get redrawsDropped() {
+    return redrawsDropped;
   },
   get drawCallCount() {
     return takePerfStats().flushes;

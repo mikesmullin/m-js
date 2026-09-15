@@ -47,7 +47,7 @@ import {
   takePerfStats,
 } from './reactive.js';
 
-const VERSION = '3.4.0';
+const VERSION = '3.5.0';
 
 export {
   reactive,
